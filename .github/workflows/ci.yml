@@ -1,0 +1,49 @@
+name: NetOps Continuous Integration (CI)
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  build-and-test:
+    name: Build & Test (Windows Runner)
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET 10 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore NuGet Dependencies
+      run: dotnet restore NetOps.slnx
+
+    - name: Build Solution
+      run: dotnet build NetOps.slnx --configuration Release --no-restore
+
+    - name: Execute Automated Tests
+      run: dotnet test NetOps.slnx --configuration Release --no-build --verbosity normal
+
+  test-linux-agent:
+    name: Verify Linux Agent Compatibility (Ubuntu Runner)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET 10 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Build Shared.Contracts
+      run: dotnet build src/Shared.Contracts/Shared.Contracts.csproj --configuration Release
+
+    - name: Build Agent.Worker
+      run: dotnet build src/Agent.Worker/Agent.Worker.csproj --configuration Release
