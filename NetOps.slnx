@@ -5,4 +5,7 @@
     <Project Path="src/Master.Api/Master.Api.csproj" />
     <Project Path="src/Shared.Contracts/Shared.Contracts.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NetOps.Tests/NetOps.Tests.csproj" />
+  </Folder>
 </Solution>
