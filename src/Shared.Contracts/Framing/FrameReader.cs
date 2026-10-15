@@ -1,41 +1,76 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 
 namespace Shared.Contracts.Framing;
 
+/// <summary>
+/// Bộ đọc khung dữ liệu TCP theo cơ chế Length-Prefix Framing.
+/// Hỗ trợ xử lý hiện tượng dính gói (sticky packets) và phân mảnh (fragmentation) của TCP.
+/// </summary>
 public static class FrameReader
 {
-    /// Tráº£ vá» null náº¿u Ä‘á»‘i phÆ°Æ¡ng Ä‘Ã³ng káº¿t ná»‘i sáº¡ch (chÆ°a cÃ³ byte nÃ o cá»§a frame má»›i).
+    /// <summary>
+    /// Đọc một frame hoàn chỉnh từ stream.
+    /// Trả về null nếu kết nối đóng sạch (Graceful Close - chưa nhận byte nào của frame mới).
+    /// </summary>
     public static async Task<Frame?> ReadAsync(Stream stream, CancellationToken ct = default)
     {
-        byte[] header = new byte[FrameConstants.LengthPrefixSize];
-        if (!await ReadExactAsync(stream, header, ct))
-            return null;
+        ArgumentNullException.ThrowIfNull(stream);
 
-        uint length = BinaryPrimitives.ReadUInt32BigEndian(header);
-        if (length < 1 || length > FrameConstants.MaxFrameSize)
-            throw new InvalidDataException($"Äá»™ dÃ i frame khÃ´ng há»£p lá»‡: {length}");
+        // 1. Đọc trường độ dài (4 bytes Big-Endian)
+        byte[] lengthHeader = new byte[FrameConstants.LengthPrefixSize];
+        int headerBytesRead = await ReadExactAsync(stream, lengthHeader, allowEofAtStart: true, ct).ConfigureAwait(false);
+        if (headerBytesRead == 0)
+        {
+            return null; // Graceful EOF: kết nối đóng sạch trước khi có byte nào của frame mới
+        }
 
-        byte[] body = new byte[length];
-        if (!await ReadExactAsync(stream, body, ct))
-            throw new EndOfStreamException("Káº¿t ná»‘i Ä‘Ã³ng giá»¯a chá»«ng khi Ä‘ang Ä‘á»c frame");
+        uint length = BinaryPrimitives.ReadUInt32BigEndian(lengthHeader);
+        if (length < FrameConstants.MinFrameSize || length > FrameConstants.MaxFrameSize)
+        {
+            throw new InvalidDataException($"Độ dài frame không hợp lệ: {length} bytes (cho phép từ {FrameConstants.MinFrameSize} đến {FrameConstants.MaxFrameSize} bytes).");
+        }
 
-        return new Frame(body[0], body[1..]);
+        // 2. Đọc byte Type (1 byte)
+        byte[] typeBuffer = new byte[FrameConstants.TypeSize];
+        await ReadExactAsync(stream, typeBuffer, allowEofAtStart: false, ct).ConfigureAwait(false);
+        byte type = typeBuffer[0];
+
+        // 3. Đọc Payload trực tiếp vào mảng đích (không qua mảng trung gian, loại bỏ hoàn toàn slice copy)
+        int payloadLength = (int)length - FrameConstants.TypeSize;
+        byte[] payload = payloadLength == 0 ? [] : new byte[payloadLength];
+
+        if (payloadLength > 0)
+        {
+            await ReadExactAsync(stream, payload, allowEofAtStart: false, ct).ConfigureAwait(false);
+        }
+
+        return new Frame(type, payload);
     }
 
-    /// Äá»c Ä‘á»§ buffer.Length byte. Tráº£ false náº¿u stream Ä‘Ã³ng trÆ°á»›c khi Ä‘á»c Ä‘Æ°á»£c byte nÃ o.
-    private static async Task<bool> ReadExactAsync(Stream stream, byte[] buffer, CancellationToken ct)
+    /// <summary>
+    /// Đọc chính xác buffer.Length bytes từ stream.
+    /// Nếu allowEofAtStart = true và stream đóng trước khi đọc bất kỳ byte nào, trả về 0.
+    /// Nếu stream đóng giữa chừng khi chưa đọc đủ số byte yêu cầu, ném EndOfStreamException.
+    /// </summary>
+    private static async Task<int> ReadExactAsync(Stream stream, byte[] buffer, bool allowEofAtStart, CancellationToken ct)
     {
         int offset = 0;
         while (offset < buffer.Length)
         {
-            int read = await stream.ReadAsync(buffer.AsMemory(offset), ct);
+            int read = await stream.ReadAsync(buffer.AsMemory(offset, buffer.Length - offset), ct).ConfigureAwait(false);
             if (read == 0)
             {
-                if (offset == 0) return false;
-                throw new EndOfStreamException("Stream Ä‘Ã³ng giá»¯a chá»«ng");
+                if (offset == 0 && allowEofAtStart)
+                {
+                    return 0;
+                }
+
+                throw new EndOfStreamException($"Kết nối đóng giữa chừng khi đang đọc dữ liệu (đã nhận {offset}/{buffer.Length} bytes).");
             }
+
             offset += read;
         }
-        return true;
+
+        return offset;
     }
 }
