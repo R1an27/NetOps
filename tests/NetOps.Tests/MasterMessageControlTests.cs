@@ -19,6 +19,8 @@ namespace NetOps.Tests;
 /// 5. Miễn nhiễm lỗi khi kênh truyền socket bị đứt gãy trong BeginInvoke.
 /// 6. Kiểm thử tích hợp End-to-End qua TCP Socket thực tế.
 /// </summary>
+[Trait("Category", "Integration")]
+[Trait("Area", "Master")]
 public class MasterMessageControlTests
 {
     private static AgentSession CreateTestSession(string sessionId = "test-session-01", ISafeFrameChannel? channel = null)
@@ -58,6 +60,24 @@ public class MasterMessageControlTests
         Assert.Equal(ping.MessageId, response.InReplyTo);
         Assert.Equal("req-ping-101", response.RequestId);
         Assert.True(session.LastSeenAt >= initialLastSeen);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_PingMessage_WithHeartbeatPayload_AutomaticallyAssignsSessionAgentId()
+    {
+        var control = new MasterMessageControl();
+        var session = CreateTestSession();
+        Assert.Null(session.AgentId);
+
+        var heartbeat = new HeartbeatPayload("agent-node-alpha", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var ping = NetOpsMessage.CreateRequest(MessageType.Ping, heartbeat, requestId: "req-ping-agent-01");
+
+        var response = await control.InvokeAsync(session, ping);
+
+        Assert.NotNull(response);
+        Assert.Equal(MessageType.Pong, response.MessageType);
+        Assert.Equal("PONG_ACK", response.Payload);
+        Assert.Equal("agent-node-alpha", session.AgentId);
     }
 
     [Fact]

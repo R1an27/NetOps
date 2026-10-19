@@ -14,6 +14,8 @@ namespace NetOps.Tests;
 /// Kiểm tra vòng đời kết nối, truyền nhận request-response, đo RTT Ping/Pong,
 /// xử lý Heartbeat, Command, kiểm soát timeout và ghi log khung dữ liệu nhị phân.
 /// </summary>
+[Trait("Category", "Unit")]
+[Trait("Area", "Client")]
 public class NetOpsClientServiceTests
 {
     [Fact]

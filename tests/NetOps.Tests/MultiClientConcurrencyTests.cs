@@ -15,6 +15,8 @@ namespace NetOps.Tests;
 /// 3. Server giải phóng tài nguyên triệt để khi client ngắt kết nối và sẵn sàng đón các đợt client mới.
 /// 4. Các sự cố đứt kết nối đột ngột của một nhóm client không gây crash server hay ảnh hưởng tới các client khác.
 /// </summary>
+[Trait("Category", "Stress")]
+[Trait("Area", "Master")]
 public class MultiClientConcurrencyTests
 {
     /// <summary>

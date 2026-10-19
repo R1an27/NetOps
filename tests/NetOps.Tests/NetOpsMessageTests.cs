@@ -8,6 +8,8 @@ using Xunit;
 
 namespace NetOps.Tests;
 
+[Trait("Category", "Unit")]
+[Trait("Area", "Protocol")]
 public class NetOpsMessageTests
 {
     [Fact]

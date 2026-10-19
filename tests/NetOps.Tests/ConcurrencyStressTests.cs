@@ -18,6 +18,8 @@ namespace NetOps.Tests;
 /// ngăn chặn tuyệt đối tình trạng trộn lẫn byte (Byte Interleaving) và Request-Response Correlation
 /// của NetOpsClientService hoạt động chính xác dưới áp lực nhiều luồng đồng thời.
 /// </summary>
+[Trait("Category", "Stress")]
+[Trait("Area", "Protocol")]
 public class ConcurrencyStressTests
 {
     /// <summary>

@@ -19,6 +19,8 @@ namespace NetOps.Tests;
 /// 5. Payload chứa JSON rác hoặc dị tật (Malformed JSON).
 /// 6. Client tự bảo vệ và hủy pending requests sạch sẽ khi đối phương ngắt đột ngột.
 /// </summary>
+[Trait("Category", "Resilience")]
+[Trait("Area", "Protocol")]
 public class NetworkFaultResilienceTests
 {
     /// <summary>

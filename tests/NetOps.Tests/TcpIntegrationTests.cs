@@ -11,6 +11,8 @@ namespace NetOps.Tests;
 /// Bộ kiểm thử tích hợp End-to-End kiểm chứng giao tiếp qua Socket TCP thực tế trên localhost (127.0.0.1)
 /// giữa NetOpsClientService và TcpManagerServer theo chuẩn NetOps Protocol v0.
 /// </summary>
+[Trait("Category", "Integration")]
+[Trait("Area", "Master")]
 public class TcpIntegrationTests
 {
     [Fact]

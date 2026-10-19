@@ -9,6 +9,8 @@ namespace NetOps.Tests;
 /// Bộ Unit Test chuyên sâu ProtocolDtoTests xác nhận việc tuần tự hóa (Serialize)
 /// và giải tuần tự hóa (Deserialize) thành công cho từng loại payload trong NetOps Protocol v0.
 /// </summary>
+[Trait("Category", "Unit")]
+[Trait("Area", "Protocol")]
 public class ProtocolDtoTests
 {
     #region 1. AuthRequestPayload Tests

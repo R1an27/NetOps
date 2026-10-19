@@ -20,6 +20,8 @@ namespace NetOps.Tests;
 /// 5. Tự động gỡ bỏ session khi ngắt kết nối đột ngột (Socket abort / RST linger zero).
 /// 6. Kiểm thử áp lực đa kết nối đồng thời: 15 clients kết nối và ngắt kết nối đồng thời.
 /// </summary>
+[Trait("Category", "Integration")]
+[Trait("Area", "Master")]
 public class ConnectionManagerTests
 {
     #region 1. Unit Tests cho ConnectionManager
@@ -129,11 +131,240 @@ public class ConnectionManagerTests
         manager.TryRegister(session2);
 
         var pingMsg = NetOpsMessage.Create(MessageType.Ping, "BROADCAST_TEST");
-        await manager.BroadcastAsync(pingMsg);
+        var result = await manager.BroadcastAsync(pingMsg);
 
         // Cả 2 stream đều đã nhận được dữ liệu (length > 0)
         Assert.True(ms1.Length > 0);
         Assert.True(ms2.Length > 0);
+        Assert.Equal(2, result.TotalTargeted);
+        Assert.Equal(2, result.SuccessCount);
+        Assert.Equal(0, result.FailedCount);
+        Assert.True(result.AllSucceeded);
+        Assert.False(result.HasFailures);
+    }
+
+    [Fact]
+    public async Task ConnectionManager_BroadcastAsync_AllSessionsSucceed_ReturnsCorrectResult()
+    {
+        var manager = new ConnectionManager();
+        using var ms1 = new MemoryStream();
+        using var ms2 = new MemoryStream();
+        using var ms3 = new MemoryStream();
+        using var s1 = new SafeFrameStream(ms1);
+        using var s2 = new SafeFrameStream(ms2);
+        using var s3 = new SafeFrameStream(ms3);
+
+        var session1 = new AgentSession("s-01", s1, "127.0.0.1:5001", DateTimeOffset.UtcNow, agentId: "agent-01");
+        var session2 = new AgentSession("s-02", s2, "127.0.0.1:5002", DateTimeOffset.UtcNow, agentId: "agent-02");
+        var session3 = new AgentSession("s-03", s3, "127.0.0.1:5003", DateTimeOffset.UtcNow, agentId: "agent-03");
+
+        manager.TryRegister(session1);
+        manager.TryRegister(session2);
+        manager.TryRegister(session3);
+
+        var cmdMsg = NetOpsMessage.CreateRequest(MessageType.Command, new CommandRequestPayload("cmd-all", "hostname"));
+        var result = await manager.BroadcastAsync(cmdMsg);
+
+        Assert.Equal(3, result.TotalTargeted);
+        Assert.Equal(3, result.SuccessCount);
+        Assert.Equal(0, result.FailedCount);
+        Assert.True(result.AllSucceeded);
+        Assert.False(result.HasFailures);
+
+        Assert.True(ms1.Length > 0);
+        Assert.True(ms2.Length > 0);
+        Assert.True(ms3.Length > 0);
+    }
+
+    [Fact]
+    public async Task ConnectionManager_BroadcastAsync_NoActiveSessions_ReturnsZeroResult()
+    {
+        var manager = new ConnectionManager();
+        Assert.Equal(0, manager.ActiveCount);
+
+        var pingMsg = NetOpsMessage.Create(MessageType.Ping, "EMPTY_BROADCAST");
+        var result = await manager.BroadcastAsync(pingMsg);
+
+        Assert.NotNull(result);
+        Assert.Equal(0, result.TotalTargeted);
+        Assert.Equal(0, result.SuccessCount);
+        Assert.Equal(0, result.FailedCount);
+        Assert.False(result.AllSucceeded);
+        Assert.False(result.HasFailures);
+    }
+
+    [Fact]
+    public async Task ConnectionManager_BroadcastAsync_PartialFailure_ReturnsCorrectCounts()
+    {
+        var manager = new ConnectionManager();
+        using var msGood1 = new MemoryStream();
+        using var msGood2 = new MemoryStream();
+        var msFaulty = new MemoryStream();
+
+        using var sGood1 = new SafeFrameStream(msGood1);
+        using var sGood2 = new SafeFrameStream(msGood2);
+        var sFaulty = new SafeFrameStream(msFaulty);
+
+        var sessionGood1 = new AgentSession("s-good-01", sGood1, "127.0.0.1:5001", DateTimeOffset.UtcNow, agentId: "agent-good-1");
+        var sessionFaulty = new AgentSession("s-faulty-02", sFaulty, "127.0.0.1:5002", DateTimeOffset.UtcNow, agentId: "agent-faulty-2");
+        var sessionGood2 = new AgentSession("s-good-03", sGood2, "127.0.0.1:5003", DateTimeOffset.UtcNow, agentId: "agent-good-2");
+
+        manager.TryRegister(sessionGood1);
+        manager.TryRegister(sessionFaulty);
+        manager.TryRegister(sessionGood2);
+
+        // Giả lập stream faulty bị đóng
+        msFaulty.Dispose();
+
+        var pingMsg = NetOpsMessage.Create(MessageType.Ping, "PARTIAL_BROADCAST");
+        var result = await manager.BroadcastAsync(pingMsg);
+
+        // Phát sóng vẫn hoàn tất, không quăng unhandled exception
+        Assert.Equal(3, result.TotalTargeted);
+        Assert.Equal(2, result.SuccessCount);
+        Assert.Equal(1, result.FailedCount);
+        Assert.False(result.AllSucceeded);
+        Assert.True(result.HasFailures);
+
+        // Các stream lành lặn vẫn nhận được dữ liệu trọn vẹn
+        Assert.True(msGood1.Length > 0);
+        Assert.True(msGood2.Length > 0);
+    }
+
+    [Fact]
+    public async Task ConnectionManager_BroadcastAsync_NullMessage_ThrowsArgumentNullException()
+    {
+        var manager = new ConnectionManager();
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+        {
+            await manager.BroadcastAsync(null!);
+        });
+    }
+
+    [Fact]
+    public async Task ConnectionManager_SendUnicastAsync_Success_SendsToTargetSessionOnly()
+    {
+        var manager = new ConnectionManager();
+        using var msAlpha = new MemoryStream();
+        using var msBeta = new MemoryStream();
+        using var streamAlpha = new SafeFrameStream(msAlpha);
+        using var streamBeta = new SafeFrameStream(msBeta);
+
+        var sessionAlpha = new AgentSession("sess-alpha", streamAlpha, "127.0.0.1:5001", DateTimeOffset.UtcNow, agentId: "agent-alpha");
+        var sessionBeta = new AgentSession("sess-beta", streamBeta, "127.0.0.1:5002", DateTimeOffset.UtcNow, agentId: "agent-beta");
+
+        manager.TryRegister(sessionAlpha);
+        manager.TryRegister(sessionBeta);
+
+        var cmdPayload = new CommandRequestPayload("cmd-target-beta", "dir", timeoutSeconds: 10);
+        var unicastMsg = NetOpsMessage.CreateRequest(MessageType.Command, cmdPayload, requestId: "req-unicast-beta");
+
+        // Gửi Unicast tới agent-beta
+        bool sent = await manager.SendUnicastAsync("agent-beta", unicastMsg);
+
+        // Xác thực kết quả gửi
+        Assert.True(sent);
+        Assert.True(msBeta.Length > 0, "Agent đích phải nhận được frame dữ liệu");
+        Assert.Equal(0, msAlpha.Length); // Agent còn lại tuyệt đối không nhận được dữ liệu
+
+        // Kiểm tra case-insensitive
+        using var msGamma = new MemoryStream();
+        using var streamGamma = new SafeFrameStream(msGamma);
+        var sessionGamma = new AgentSession("sess-gamma", streamGamma, "127.0.0.1:5003", DateTimeOffset.UtcNow, agentId: "Node-Gamma-42");
+        manager.TryRegister(sessionGamma);
+
+        bool sentCaseInsensitive = await manager.SendUnicastAsync("node-gamma-42", unicastMsg);
+        Assert.True(sentCaseInsensitive);
+        Assert.True(msGamma.Length > 0);
+    }
+
+    [Fact]
+    public async Task ConnectionManager_SendUnicastBySessionIdAsync_Success_SendsToTargetSessionOnly()
+    {
+        var manager = new ConnectionManager();
+        using var ms1 = new MemoryStream();
+        using var ms2 = new MemoryStream();
+        using var stream1 = new SafeFrameStream(ms1);
+        using var stream2 = new SafeFrameStream(ms2);
+
+        var session1 = new AgentSession("sess-target-01", stream1, "127.0.0.1:5001", DateTimeOffset.UtcNow, agentId: "agent-01");
+        var session2 = new AgentSession("sess-target-02", stream2, "127.0.0.1:5002", DateTimeOffset.UtcNow, agentId: "agent-02");
+
+        manager.TryRegister(session1);
+        manager.TryRegister(session2);
+
+        var pingMsg = NetOpsMessage.Create(MessageType.Ping, "UNICAST_SESSION_TEST");
+
+        bool sent = await manager.SendUnicastBySessionIdAsync("sess-target-01", pingMsg);
+
+        Assert.True(sent);
+        Assert.True(ms1.Length > 0);
+        Assert.Equal(0, ms2.Length);
+    }
+
+    [Fact]
+    public async Task ConnectionManager_SendUnicastAsync_AgentNotFoundOrInvalid_ReturnsFalseSafely()
+    {
+        var manager = new ConnectionManager();
+        var dummyMsg = NetOpsMessage.Create(MessageType.Ping, "TEST");
+
+        // 1. AgentId không tồn tại
+        bool notFoundAgent = await manager.SendUnicastAsync("non-existent-agent", dummyMsg);
+        Assert.False(notFoundAgent);
+
+        // 2. AgentId rỗng hoặc khoảng trắng
+        bool emptyAgent = await manager.SendUnicastAsync(string.Empty, dummyMsg);
+        Assert.False(emptyAgent);
+
+        bool whitespaceAgent = await manager.SendUnicastAsync("   ", dummyMsg);
+        Assert.False(whitespaceAgent);
+
+        // 3. SessionId không tồn tại
+        bool notFoundSession = await manager.SendUnicastBySessionIdAsync("non-existent-sess", dummyMsg);
+        Assert.False(notFoundSession);
+
+        // 4. SessionId rỗng hoặc khoảng trắng
+        bool emptySession = await manager.SendUnicastBySessionIdAsync(string.Empty, dummyMsg);
+        Assert.False(emptySession);
+
+        bool whitespaceSession = await manager.SendUnicastBySessionIdAsync("   ", dummyMsg);
+        Assert.False(whitespaceSession);
+    }
+
+    [Fact]
+    public async Task ConnectionManager_SendUnicastAsync_NullMessage_ThrowsArgumentNullException()
+    {
+        var manager = new ConnectionManager();
+
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+        {
+            await manager.SendUnicastAsync("any-agent", null!);
+        });
+
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+        {
+            await manager.SendUnicastBySessionIdAsync("any-session", null!);
+        });
+    }
+
+    [Fact]
+    public async Task ConnectionManager_SendUnicastAsync_DisposedOrFaultyStream_ReturnsFalseSafely()
+    {
+        var manager = new ConnectionManager();
+        var ms = new MemoryStream();
+        var stream = new SafeFrameStream(ms);
+        var session = new AgentSession("sess-faulty", stream, "127.0.0.1:5001", DateTimeOffset.UtcNow, agentId: "agent-faulty");
+
+        manager.TryRegister(session);
+
+        // Giả lập stream / socket bị đóng (gây lỗi ObjectDisposedException khi ghi)
+        ms.Dispose();
+
+        var pingMsg = NetOpsMessage.Create(MessageType.Ping, "TEST_FAULT");
+
+        // Gọi SendUnicastAsync phải bắt lỗi an toàn và trả về false
+        bool result = await manager.SendUnicastAsync("agent-faulty", pingMsg);
+        Assert.False(result);
     }
 
     #endregion

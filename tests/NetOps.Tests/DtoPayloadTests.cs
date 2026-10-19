@@ -17,6 +17,8 @@ namespace NetOps.Tests;
 /// 8. CommandDonePayload
 /// 9. ErrorMessagePayload
 /// </summary>
+[Trait("Category", "Unit")]
+[Trait("Area", "Protocol")]
 public class DtoPayloadTests
 {
     #region 1. AuthRequestPayload Tests

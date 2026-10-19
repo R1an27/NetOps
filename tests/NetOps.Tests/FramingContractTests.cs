@@ -12,6 +12,8 @@ namespace NetOps.Tests;
 /// Bộ kiểm thử xác thực các hợp đồng giao diện (Interface & Contract Suite) của Message Framing.
 /// Kiểm tra IFrameReader, IFrameWriter, IFrameCodec, ISafeFrameChannel, và FramingOptions.
 /// </summary>
+[Trait("Category", "Unit")]
+[Trait("Area", "Protocol")]
 public class FramingContractTests
 {
     [Fact]

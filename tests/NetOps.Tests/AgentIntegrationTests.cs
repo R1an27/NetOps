@@ -1,8 +1,11 @@
 using System.Net;
 using System.Net.Sockets;
 using Agent.Worker.Services;
+using Master.Api.Services;
 using Microsoft.Extensions.Logging;
 using NetOps.Tests.TestHelpers;
+using ServerManager.Shared.Contracts.Models;
+using ServerManager.Shared.Contracts.Payloads;
 using Xunit;
 
 namespace NetOps.Tests;
@@ -10,8 +13,11 @@ namespace NetOps.Tests;
 /// <summary>
 /// Bộ kiểm thử tích hợp End-to-End cho TcpAgentClient giao tiếp với TcpManagerServer qua Socket TCP thực tế.
 /// Kiểm chứng luồng gửi Ping định kỳ, nhận Pong, xử lý khi Server ngắt kết nối (Graceful EOF),
-/// và cơ chế xử lý lỗi khi không kết nối được tới server (SocketException handling & Reconnect backoff).
+/// cơ chế xử lý lỗi khi không kết nối được tới server (SocketException handling & Reconnect backoff),
+/// và tích hợp định tuyến thông điệp hai chiều qua IAgentMessageControl (Master gửi PING -> Agent phản hồi PONG, Master gửi COMMAND).
 /// </summary>
+[Trait("Category", "Integration")]
+[Trait("Area", "Agent")]
 public class AgentIntegrationTests
 {
     [Fact]
@@ -40,6 +46,98 @@ public class AgentIntegrationTests
             Assert.Contains(logger.Messages, m => m.Contains("Sent PING"));
             Assert.Contains(logger.Messages, m => m.Contains("Received PONG"));
         }
+    }
+
+    [Fact]
+    public async Task Master_CanSendPingToAgent_AndAgentAutomaticallyRepliesPong_OverRealTcpSocket()
+    {
+        var serverLogger = new TestLogger<TcpManagerServer>();
+        await using var server = await TcpTestServerHelper.StartNewAsync(serverLogger);
+
+        var agentLogger = new TestLogger<TcpAgentClient>();
+        var controlLogger = new TestLogger<AgentMessageControl>();
+        var control = new AgentMessageControl(controlLogger);
+        var agent = new TcpAgentClient(agentLogger, control);
+
+        Assert.Same(control, agent.MessageControl);
+
+        using var cts = new CancellationTokenSource();
+        var agentTask = agent.RunAsync(server.Host, server.Port, "agent-ping-pong-e2e", TimeSpan.FromMilliseconds(50), cts.Token);
+
+        // Chờ Agent kết nối thành công và Master ghi nhận phiên làm việc
+        AgentSession? session = null;
+        for (int i = 0; i < 50; i++)
+        {
+            session = server.Server.ConnectionManager.GetAllSessions().FirstOrDefault();
+            if (session != null) break;
+            await Task.Delay(20);
+        }
+        Assert.NotNull(session);
+
+        // Master chủ động gửi một gói tin PING tới Agent
+        var pingFromMaster = NetOpsMessage.Create(MessageType.Ping, "PROBE_FROM_MASTER", requestId: "req-master-probe-42");
+        await session.SendMessageAsync(pingFromMaster);
+
+        // Chờ Agent xử lý và gửi phản hồi PONG qua socket TCP
+        await Task.Delay(200);
+
+        cts.Cancel();
+        await agentTask;
+
+        // Xác minh nhật ký phía Agent: AgentMessageControl tự động tạo và gửi PONG
+        lock (controlLogger.Messages)
+        {
+            Assert.Contains(controlLogger.Messages, m => m.Contains("Processed PING") && m.Contains("generating PONG response"));
+            Assert.Contains(controlLogger.Messages, m => m.Contains("Sent response 'PONG'"));
+        }
+
+        // Xác minh nhật ký phía Master: Master Server đã nhận được gói tin PONG từ Agent
+        lock (serverLogger.Messages)
+        {
+            Assert.Contains(serverLogger.Messages, m => m.Contains("Received message 'PONG'"));
+        }
+    }
+
+    [Fact]
+    public async Task Master_CanSendCommandToAgent_AndTriggerCommandReceivedEvent_OverRealTcpSocket()
+    {
+        await using var server = await TcpTestServerHelper.StartNewAsync();
+
+        var agentLogger = new TestLogger<TcpAgentClient>();
+        var control = new AgentMessageControl();
+        var agent = new TcpAgentClient(agentLogger, control);
+
+        var cmdReceivedTcs = new TaskCompletionSource<CommandRequestPayload>();
+        control.CommandReceived += (_, payload) => cmdReceivedTcs.TrySetResult(payload);
+
+        using var cts = new CancellationTokenSource();
+        var agentTask = agent.RunAsync(server.Host, server.Port, "agent-cmd-e2e", TimeSpan.FromMilliseconds(50), cts.Token);
+
+        AgentSession? session = null;
+        for (int i = 0; i < 50; i++)
+        {
+            session = server.Server.ConnectionManager.GetAllSessions().FirstOrDefault();
+            if (session != null) break;
+            await Task.Delay(20);
+        }
+        Assert.NotNull(session);
+
+        // Master gửi lệnh COMMAND thực thi từ xa tới Agent
+        var cmdPayload = new CommandRequestPayload("cmd-uuid-777", "docker ps -a", timeoutSeconds: 45, workingDir: "/opt/app");
+        var cmdMsg = NetOpsMessage.Create(MessageType.Command, cmdPayload, requestId: "req-cmd-flow-01");
+        await session.SendMessageAsync(cmdMsg);
+
+        // Chờ sự kiện CommandReceived kích hoạt trên Agent
+        var received = await cmdReceivedTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        cts.Cancel();
+        await agentTask;
+
+        Assert.NotNull(received);
+        Assert.Equal("cmd-uuid-777", received.CommandId);
+        Assert.Equal("docker ps -a", received.CommandLine);
+        Assert.Equal(45, received.TimeoutSeconds);
+        Assert.Equal("/opt/app", received.WorkingDir);
     }
 
     [Fact]

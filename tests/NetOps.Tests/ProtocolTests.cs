@@ -15,6 +15,8 @@ namespace NetOps.Tests;
 /// Bộ kiểm thử giao thức cấp cao (Protocol Regression & Specification Suite).
 /// Xác thực tính tương thích ngược (Backward Compatibility) và sự đúng đắn của toàn bộ luồng NetOps Protocol v0.
 /// </summary>
+[Trait("Category", "Unit")]
+[Trait("Area", "Protocol")]
 public class ProtocolTests
 {
     #region Phase 1: Backward Compatibility Tests

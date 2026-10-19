@@ -1,4 +1,5 @@
 using Master.Api.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace NetOps.Tests.TestHelpers;
@@ -25,10 +26,10 @@ public sealed class TcpTestServerHelper : IAsyncDisposable, IDisposable
     /// <summary>
     /// Khởi động một instance TcpManagerServer trên cổng ngẫu nhiên (Port = 0) và chờ cho tới khi server sẵn sàng lắng nghe.
     /// </summary>
-    public static async Task<TcpTestServerHelper> StartNewAsync(CancellationToken cancellationToken = default)
+    public static async Task<TcpTestServerHelper> StartNewAsync(ILogger<TcpManagerServer>? logger = null, CancellationToken cancellationToken = default)
     {
-        var logger = NullLogger<TcpManagerServer>.Instance;
-        var server = new TcpManagerServer(logger, port: 0);
+        var serverLogger = logger ?? NullLogger<TcpManagerServer>.Instance;
+        var server = new TcpManagerServer(serverLogger, port: 0);
 
         var helper = new TcpTestServerHelper(server);
         await helper.StartInternalAsync(cancellationToken).ConfigureAwait(false);

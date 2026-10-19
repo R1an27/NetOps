@@ -12,6 +12,8 @@ namespace NetOps.Tests;
 /// Bao gồm: Endianness Validation, Phân mảnh cực hạn (Irregular Fragmentation),
 /// Dính gói hàng loạt (Sticky Packets), Chịu tải đồng thời (Concurrent Stress), và Mô phỏng tấn công biên.
 /// </summary>
+[Trait("Category", "Unit")]
+[Trait("Area", "Protocol")]
 public class FramingBusinessLogicTests
 {
     #region 1. Endianness Verification (Network Byte Order)

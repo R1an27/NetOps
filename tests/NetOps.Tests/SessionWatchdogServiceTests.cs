@@ -22,6 +22,8 @@ namespace NetOps.Tests;
 /// 6. Miễn nhiễm lỗi khi đóng kết nối socket bất thường không làm gián đoạn chu trình quét.
 /// 7. Vòng lặp giám sát chạy nền với PeriodicTimer và dừng êm dịu khi nhận tín hiệu hủy.
 /// </summary>
+[Trait("Category", "Unit")]
+[Trait("Area", "Master")]
 public class SessionWatchdogServiceTests
 {
     private static AgentSession CreateSession(string sessionId, DateTimeOffset lastSeenAt, ISafeFrameChannel? channel = null)
