@@ -114,6 +114,18 @@ public class MasterMessageControl : IMasterMessageControl
 
     private NetOpsMessage HandlePing(AgentSession session, NetOpsMessage message)
     {
+        // Tự động nhận diện và gán AgentId nếu gói tin PING chứa HeartbeatPayload và session chưa có AgentId
+        if (string.IsNullOrEmpty(session.AgentId) &&
+            message.TryGetPayload<HeartbeatPayload>(out var heartbeat) &&
+            heartbeat != null &&
+            !string.IsNullOrWhiteSpace(heartbeat.AgentId))
+        {
+            session.AgentId = heartbeat.AgentId;
+            _logger.LogInformation(
+                "[MasterMessageControl] Identified Agent '{AgentId}' from PING payload on session {SessionId}",
+                session.AgentId, session.SessionId);
+        }
+
         _logger.LogInformation(
             "[MasterMessageControl] Processed PING from session {SessionId}, generating PONG response",
             session.SessionId);

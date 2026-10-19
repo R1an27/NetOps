@@ -127,25 +127,114 @@ public class ConnectionManager : IConnectionManager
     /// <summary>
     /// Phát sóng (broadcast) một NetOpsMessage tới tất cả các session đang hoạt động song song.
     /// </summary>
-    public async Task BroadcastAsync(NetOpsMessage message, CancellationToken cancellationToken = default)
+    public async Task<BroadcastResult> BroadcastAsync(NetOpsMessage message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
 
         var sessions = _sessions.Values.ToArray();
-        if (sessions.Length == 0) return;
+        if (sessions.Length == 0)
+        {
+            _logger?.LogDebug("[ConnectionManager] Broadcast skipped: No active sessions available.");
+            return new BroadcastResult(0, 0, 0);
+        }
+
+        int successCount = 0;
+        int failedCount = 0;
 
         var tasks = sessions.Select(async session =>
         {
             try
             {
                 await session.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
+                Interlocked.Increment(ref successCount);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "[ConnectionManager] Error broadcasting to session {SessionId}", session.SessionId);
+                Interlocked.Increment(ref failedCount);
+                _logger?.LogWarning(ex, "[ConnectionManager] Error broadcasting to session {SessionId} (AgentId: {AgentId})",
+                    session.SessionId, session.AgentId ?? "Anonymous");
             }
         });
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
+
+        _logger?.LogInformation(
+            "[ConnectionManager] Broadcast message {MessageType} (Id: {MessageId}) completed. Targeted: {Total}, Succeeded: {Success}, Failed: {Failed}",
+            message.MessageType, message.MessageId, sessions.Length, successCount, failedCount);
+
+        return new BroadcastResult(sessions.Length, successCount, failedCount);
+    }
+
+    /// <summary>
+    /// Gửi một NetOpsMessage dạng Unicast tới một Agent cụ thể theo AgentId.
+    /// </summary>
+    public async Task<bool> SendUnicastAsync(string agentId, NetOpsMessage message, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        if (string.IsNullOrWhiteSpace(agentId))
+        {
+            _logger?.LogWarning("[ConnectionManager] SendUnicastAsync failed: agentId is null or whitespace");
+            return false;
+        }
+
+        var session = GetSessionByAgentId(agentId);
+        if (session == null)
+        {
+            _logger?.LogWarning("[ConnectionManager] SendUnicastAsync failed: Agent '{AgentId}' is not connected or not found", agentId);
+            return false;
+        }
+
+        return await SendToSessionInternalAsync(session, message, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Gửi một NetOpsMessage dạng Unicast tới một Agent cụ thể theo SessionId.
+    /// </summary>
+    public async Task<bool> SendUnicastBySessionIdAsync(string sessionId, NetOpsMessage message, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            _logger?.LogWarning("[ConnectionManager] SendUnicastBySessionIdAsync failed: sessionId is null or whitespace");
+            return false;
+        }
+
+        var session = GetSession(sessionId);
+        if (session == null)
+        {
+            _logger?.LogWarning("[ConnectionManager] SendUnicastBySessionIdAsync failed: Session '{SessionId}' is not found", sessionId);
+            return false;
+        }
+
+        return await SendToSessionInternalAsync(session, message, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> SendToSessionInternalAsync(AgentSession session, NetOpsMessage message, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await session.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
+            _logger?.LogDebug(
+                "[ConnectionManager] Sent Unicast message {MessageType} (Id: {MessageId}) to Agent '{AgentId}' (Session: {SessionId})",
+                message.MessageType, message.MessageId, session.AgentId ?? "Anonymous", session.SessionId);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex,
+                "[ConnectionManager] Error sending Unicast message to Agent '{AgentId}' (Session: {SessionId})",
+                session.AgentId ?? "Anonymous", session.SessionId);
+            return false;
+        }
     }
 }

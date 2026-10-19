@@ -54,7 +54,28 @@ public interface IConnectionManager
     IReadOnlyCollection<AgentSession> GetAllSessions();
 
     /// <summary>
-    /// Phát sóng (broadcast) một thông điệp tới tất cả các session đang hoạt động.
+    /// Phát sóng (broadcast) một thông điệp tới tất cả các session đang hoạt động song song.
     /// </summary>
-    Task BroadcastAsync(NetOpsMessage message, CancellationToken cancellationToken = default);
+    /// <param name="message">Thông điệp cần phát sóng</param>
+    /// <param name="cancellationToken">Mã hủy thao tác bất đồng bộ</param>
+    /// <returns>Đối tượng BroadcastResult tổng hợp số lượng phiên nhắm tới, thành công và thất bại</returns>
+    Task<BroadcastResult> BroadcastAsync(NetOpsMessage message, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gửi một NetOpsMessage dạng Unicast tới một Agent cụ thể theo AgentId.
+    /// </summary>
+    /// <param name="agentId">Mã định danh Agent đích</param>
+    /// <param name="message">Thông điệp cần gửi</param>
+    /// <param name="cancellationToken">Mã hủy thao tác bất đồng bộ</param>
+    /// <returns>True nếu tìm thấy session và gửi thành công, False nếu không tìm thấy session hoặc gặp sự cố mạng</returns>
+    Task<bool> SendUnicastAsync(string agentId, NetOpsMessage message, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gửi một NetOpsMessage dạng Unicast tới một Agent cụ thể theo SessionId.
+    /// </summary>
+    /// <param name="sessionId">Mã định danh phiên kết nối đích</param>
+    /// <param name="message">Thông điệp cần gửi</param>
+    /// <param name="cancellationToken">Mã hủy thao tác bất đồng bộ</param>
+    /// <returns>True nếu tìm thấy session và gửi thành công, False nếu không tìm thấy session hoặc gặp sự cố mạng</returns>
+    Task<bool> SendUnicastBySessionIdAsync(string sessionId, NetOpsMessage message, CancellationToken cancellationToken = default);
 }
