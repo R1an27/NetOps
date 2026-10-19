@@ -1,76 +1,50 @@
-using System.Buffers.Binary;
-
 namespace Shared.Contracts.Framing;
 
 /// <summary>
-/// Bộ đọc khung dữ liệu TCP theo cơ chế Length-Prefix Framing.
-/// Hỗ trợ xử lý hiện tượng dính gói (sticky packets) và phân mảnh (fragmentation) của TCP.
+/// Bộ đọc khung dữ liệu TCP theo cơ chế Length-Prefixed Framing chuẩn NetOps Protocol v0.
+/// Cấu trúc: [Length (4 Bytes, Big-Endian)] [Payload Data (N Bytes)]
+/// Xử lý triệt để hiện tượng dính gói (sticky packets) và phân mảnh (fragmentation) của TCP stream.
 /// </summary>
 public static class FrameReader
 {
     /// <summary>
-    /// Đọc một frame hoàn chỉnh từ stream.
+    /// Đọc một frame hoàn chỉnh từ stream theo thuật toán Frame Decoding Algorithm (Mục 2.2 spec v0).
     /// Trả về null nếu kết nối đóng sạch (Graceful Close - chưa nhận byte nào của frame mới).
+    /// Ném InvalidDataException nếu chiều dài frame vi phạm quy tắc (Length &lt; 1 hoặc Length &gt; 16 MB).
+    /// Ném EndOfStreamException nếu luồng bị ngắt kết nối giữa chừng khi đang đọc dở frame.
     /// </summary>
+    /// <param name="stream">Luồng dữ liệu TCP hoặc MemoryStream cần đọc</param>
+    /// <param name="ct">CancellationToken thông báo hủy tác vụ</param>
+    /// <returns>Đối tượng Frame chứa mảng byte dữ liệu, hoặc null nếu stream đã đóng an toàn</returns>
     public static async Task<Frame?> ReadAsync(Stream stream, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
-
-        // 1. Đọc trường độ dài (4 bytes Big-Endian)
-        byte[] lengthHeader = new byte[FrameConstants.LengthPrefixSize];
-        int headerBytesRead = await ReadExactAsync(stream, lengthHeader, allowEofAtStart: true, ct).ConfigureAwait(false);
-        if (headerBytesRead == 0)
-        {
-            return null; // Graceful EOF: kết nối đóng sạch trước khi có byte nào của frame mới
-        }
-
-        uint length = BinaryPrimitives.ReadUInt32BigEndian(lengthHeader);
-        if (length < FrameConstants.MinFrameSize || length > FrameConstants.MaxFrameSize)
-        {
-            throw new InvalidDataException($"Độ dài frame không hợp lệ: {length} bytes (cho phép từ {FrameConstants.MinFrameSize} đến {FrameConstants.MaxFrameSize} bytes).");
-        }
-
-        // 2. Đọc byte Type (1 byte)
-        byte[] typeBuffer = new byte[FrameConstants.TypeSize];
-        await ReadExactAsync(stream, typeBuffer, allowEofAtStart: false, ct).ConfigureAwait(false);
-        byte type = typeBuffer[0];
-
-        // 3. Đọc Payload trực tiếp vào mảng đích (không qua mảng trung gian, loại bỏ hoàn toàn slice copy)
-        int payloadLength = (int)length - FrameConstants.TypeSize;
-        byte[] payload = payloadLength == 0 ? [] : new byte[payloadLength];
-
-        if (payloadLength > 0)
-        {
-            await ReadExactAsync(stream, payload, allowEofAtStart: false, ct).ConfigureAwait(false);
-        }
-
-        return new Frame(type, payload);
+        return await DefaultFrameReader.Instance.ReadFrameAsync(stream, ct).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Đọc chính xác buffer.Length bytes từ stream.
-    /// Nếu allowEofAtStart = true và stream đóng trước khi đọc bất kỳ byte nào, trả về 0.
-    /// Nếu stream đóng giữa chừng khi chưa đọc đủ số byte yêu cầu, ném EndOfStreamException.
+    /// Tiện ích đọc trực tiếp mảng byte Payload từ stream.
+    /// Trả về null nếu kết nối đóng sạch trước frame mới.
     /// </summary>
-    private static async Task<int> ReadExactAsync(Stream stream, byte[] buffer, bool allowEofAtStart, CancellationToken ct)
+    /// <param name="stream">Luồng dữ liệu TCP hoặc MemoryStream cần đọc</param>
+    /// <param name="ct">CancellationToken thông báo hủy tác vụ</param>
+    /// <returns>Mảng byte payload, hoặc null nếu stream đã đóng an toàn</returns>
+    public static async Task<byte[]?> ReadPayloadAsync(Stream stream, CancellationToken ct = default)
     {
-        int offset = 0;
-        while (offset < buffer.Length)
-        {
-            int read = await stream.ReadAsync(buffer.AsMemory(offset, buffer.Length - offset), ct).ConfigureAwait(false);
-            if (read == 0)
-            {
-                if (offset == 0 && allowEofAtStart)
-                {
-                    return 0;
-                }
+        ArgumentNullException.ThrowIfNull(stream);
+        return await DefaultFrameReader.Instance.ReadPayloadAsync(stream, ct).ConfigureAwait(false);
+    }
 
-                throw new EndOfStreamException($"Kết nối đóng giữa chừng khi đang đọc dữ liệu (đã nhận {offset}/{buffer.Length} bytes).");
-            }
-
-            offset += read;
-        }
-
-        return offset;
+    /// <summary>
+    /// Tiện ích đọc trực tiếp vùng nhớ ReadOnlyMemory Payload từ stream.
+    /// Trả về null nếu kết nối đóng sạch trước frame mới.
+    /// </summary>
+    /// <param name="stream">Luồng dữ liệu TCP hoặc MemoryStream cần đọc</param>
+    /// <param name="ct">CancellationToken thông báo hủy tác vụ</param>
+    /// <returns>Vùng nhớ ReadOnlyMemory byte payload, hoặc null nếu stream đã đóng an toàn</returns>
+    public static async Task<ReadOnlyMemory<byte>?> ReadPayloadMemoryAsync(Stream stream, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        return await DefaultFrameReader.Instance.ReadPayloadMemoryAsync(stream, ct).ConfigureAwait(false);
     }
 }

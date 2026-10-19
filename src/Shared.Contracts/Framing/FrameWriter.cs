@@ -1,39 +1,50 @@
-using System.Buffers.Binary;
-
 namespace Shared.Contracts.Framing;
 
 /// <summary>
-/// Bộ ghi khung dữ liệu theo cấu trúc Length-Prefix Framing.
+/// Bộ ghi khung dữ liệu theo cấu trúc Length-Prefixed Framing chuẩn NetOps Protocol v0.
+/// Cấu trúc trên đường truyền: [Length (4 Bytes, Big-Endian)] [Payload Data (N Bytes)]
 /// </summary>
 public static class FrameWriter
 {
     /// <summary>
-    /// Ghi frame ra stream bất đồng bộ với định dạng:
-    /// [Length (4 Bytes, Big-Endian)] [Type (1 Byte)] [Payload (N Bytes)]
+    /// Ghi frame ra stream bất đồng bộ với định dạng chuẩn NetOps Protocol v0:
+    /// [Length (4 Bytes, Big-Endian)] [Payload Data (N Bytes)]
     /// </summary>
+    /// <param name="stream">Luồng dữ liệu mạng hoặc bộ nhớ</param>
+    /// <param name="frame">Khung dữ liệu cần truyền tải</param>
+    /// <param name="ct">Mã thông báo hủy tác vụ</param>
     public static async Task WriteAsync(Stream stream, Frame frame, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
 
         byte[] payload = frame.Payload ?? [];
-        int length = FrameConstants.TypeSize + payload.Length;
+        await DefaultFrameWriter.Instance.WriteFrameAsync(stream, payload.AsMemory(), ct).ConfigureAwait(false);
+    }
 
-        if (length > FrameConstants.MaxFrameSize)
-        {
-            throw new InvalidDataException($"Độ dài frame ({length} bytes) vượt quá giới hạn tối đa cho phép ({FrameConstants.MaxFrameSize} bytes).");
-        }
+    /// <summary>
+    /// Tiện ích ghi trực tiếp một mảng byte payload ra stream dưới dạng frame nhị phân.
+    /// </summary>
+    /// <param name="stream">Luồng dữ liệu mạng hoặc bộ nhớ</param>
+    /// <param name="payload">Mảng byte dữ liệu cần truyền tải</param>
+    /// <param name="ct">Mã thông báo hủy tác vụ</param>
+    public static Task WriteAsync(Stream stream, byte[] payload, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(payload);
 
-        // Gộp thành 1 buffer để ghi 1 lần ra stream, tránh phân mảnh ở tầng ứng dụng
-        byte[] buffer = new byte[FrameConstants.LengthPrefixSize + length];
-        BinaryPrimitives.WriteUInt32BigEndian(buffer.AsSpan(0, FrameConstants.LengthPrefixSize), (uint)length);
-        buffer[FrameConstants.LengthPrefixSize] = frame.Type;
+        return DefaultFrameWriter.Instance.WriteFrameAsync(stream, payload.AsMemory(), ct).AsTask();
+    }
 
-        if (payload.Length > 0)
-        {
-            payload.CopyTo(buffer.AsSpan(FrameConstants.LengthPrefixSize + FrameConstants.TypeSize));
-        }
+    /// <summary>
+    /// Ghi trực tiếp một vùng nhớ ReadOnlyMemory payload nhị phân ra stream dưới dạng frame nhị phân chuẩn.
+    /// </summary>
+    /// <param name="stream">Luồng dữ liệu mạng hoặc bộ nhớ</param>
+    /// <param name="payload">Vùng nhớ dữ liệu cần truyền tải</param>
+    /// <param name="ct">Mã thông báo hủy tác vụ</param>
+    public static Task WriteAsync(Stream stream, ReadOnlyMemory<byte> payload, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
 
-        await stream.WriteAsync(buffer, ct).ConfigureAwait(false);
-        await stream.FlushAsync(ct).ConfigureAwait(false);
+        return DefaultFrameWriter.Instance.WriteFrameAsync(stream, payload, ct).AsTask();
     }
 }
