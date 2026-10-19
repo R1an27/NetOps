@@ -1,126 +1,97 @@
-using System.Buffers.Binary;
-using System.Text.Json;
 using ServerManager.Shared.Contracts.Models;
+using Shared.Contracts.Framing;
 
 namespace ServerManager.Shared.Contracts.Protocol;
 
 /// <summary>
-/// Bộ mã hóa và giải mã khung dữ liệu Length-Prefix Framing cho dòng dữ liệu TCP
+/// Bộ mã hóa và giải mã khung dữ liệu Length-Prefixed Framing cho NetOps Protocol v0.
+/// Đóng vai trò là cầu nối giữa tầng Framing nhị phân ([4 Bytes Length][Payload Data])
+/// và tầng Envelope cấu trúc JSON (NetOpsMessage).
+/// Lớp tĩnh này ủy nhiệm toàn bộ logic sang DefaultFrameCodec.Instance để đảm bảo tính đồng nhất 100%.
 /// </summary>
 public static class FrameCodec
 {
-	public const int HeaderSize = 4;
-	public const int MaxPayloadSize = 16 * 1024 * 1024; // Giới hạn 16 MB phòng ngừa tấn công tràn bộ nhớ
+    /// <summary>
+    /// Kích thước trường tiền tố độ dài (4 bytes).
+    /// </summary>
+    public const int HeaderSize = FrameConstants.LengthPrefixSize;
 
-	private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-	{
-		PropertyNameCaseInsensitive = true
-	};
+    /// <summary>
+    /// Giới hạn kích thước tối đa cho phép của payload (16 MB = 16,777,216 bytes).
+    /// </summary>
+    public const int MaxPayloadSize = FrameConstants.MaxPayloadSize;
 
-	/// <summary>
-	/// Đóng gói NetOpsMessage thành mảng byte gồm [4 Bytes Header Big-Endian] + [Payload JSON UTF-8]
-	/// </summary>
-	public static byte[] EncodeFrame(NetOpsMessage message)
-	{
-		byte[] payloadBytes = JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions);
-		if (payloadBytes.Length > MaxPayloadSize)
-		{
-			throw new InvalidOperationException($"Payload size ({payloadBytes.Length} bytes) exceeds limit ({MaxPayloadSize} bytes).");
-		}
+    /// <summary>
+    /// Đóng gói NetOpsMessage thành mảng byte hoàn chỉnh gồm:
+    /// [4 Bytes Length Big-Endian] + [Payload JSON UTF-8]
+    /// </summary>
+    /// <param name="message">Thông điệp cần đóng gói</param>
+    /// <returns>Mảng byte hoàn chỉnh của khung dữ liệu</returns>
+    public static byte[] EncodeFrame(NetOpsMessage message)
+    {
+        return DefaultFrameCodec.Instance.EncodeMessage(message);
+    }
 
-		byte[] frame = new byte[HeaderSize + payloadBytes.Length];
-		// Ghi độ dài theo thứ tự Big-Endian (Network Byte Order)
-		BinaryPrimitives.WriteInt32BigEndian(frame.AsSpan(0, HeaderSize), payloadBytes.Length);
-		Buffer.BlockCopy(payloadBytes, 0, frame, HeaderSize, payloadBytes.Length);
-		return frame;
-	}
+    /// <summary>
+    /// Giải mã một Span byte payload thành đối tượng NetOpsMessage.
+    /// </summary>
+    /// <param name="framePayload">Vùng nhớ byte payload của frame</param>
+    /// <returns>Đối tượng NetOpsMessage đã giải mã</returns>
+    public static NetOpsMessage DecodeMessage(ReadOnlySpan<byte> framePayload)
+    {
+        return DefaultFrameCodec.Instance.DecodeMessage(framePayload);
+    }
 
-	/// <summary>
-	/// Giải mã mảng byte thành đối tượng NetOpsMessage
-	/// </summary>
-	public static NetOpsMessage DecodeFrame(ReadOnlySpan<byte> frameSpan)
-	{
-		if (frameSpan.Length < HeaderSize)
-		{
-			throw new InvalidDataException($"Frame size ({frameSpan.Length}) is smaller than header size ({HeaderSize}).");
-		}
+    /// <summary>
+    /// Ghi frame bất đồng bộ ra Stream thông qua tầng Framing
+    /// </summary>
+    /// <param name="stream">Luồng dữ liệu đích</param>
+    /// <param name="message">Thông điệp cần ghi</param>
+    /// <param name="cancellationToken">Mã hủy tác vụ bất đồng bộ</param>
+    public static async Task WriteFrameAsync(Stream stream, NetOpsMessage message, CancellationToken cancellationToken = default)
+    {
+        await DefaultFrameCodec.Instance.WriteMessageAsync(stream, message, cancellationToken).ConfigureAwait(false);
+    }
 
-		int payloadLength = BinaryPrimitives.ReadInt32BigEndian(frameSpan[..HeaderSize]);
-		if (payloadLength <= 0 || payloadLength > MaxPayloadSize)
-		{
-			throw new InvalidDataException($"Invalid payload length: {payloadLength} bytes.");
-		}
+    /// <summary>
+    /// Ghi frame an toàn đa luồng ra Stream sử dụng SemaphoreSlim(1, 1).
+    /// Tuân thủ quy tắc Write Serialization (Mục 5.1 NetOps Protocol v0) nhằm chống hiện tượng
+    /// trộn lẫn byte khi có nhiều luồng cùng ghi vào kết nối Full-Duplex.
+    /// </summary>
+    /// <param name="stream">Luồng dữ liệu đích</param>
+    /// <param name="message">Thông điệp cần ghi</param>
+    /// <param name="writeLock">Khóa SemaphoreSlim(1, 1)</param>
+    /// <param name="cancellationToken">Mã hủy tác vụ bất đồng bộ</param>
+    public static async Task WriteFrameAsync(
+        Stream stream,
+        NetOpsMessage message,
+        SemaphoreSlim writeLock,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(writeLock);
 
-		if (frameSpan.Length - HeaderSize < payloadLength)
-		{
-			throw new InvalidDataException($"Frame data incomplete. Expected {payloadLength} bytes.");
-		}
+        await writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await WriteFrameAsync(stream, message, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            writeLock.Release();
+        }
+    }
 
-		ReadOnlySpan<byte> payloadSpan = frameSpan.Slice(HeaderSize, payloadLength);
-		return JsonSerializer.Deserialize<NetOpsMessage>(payloadSpan, JsonOptions)
-			   ?? throw new InvalidDataException("Failed to deserialize message payload.");
-	}
-
-	/// <summary>
-	/// Ghi frame bất đồng bộ ra NetworkStream
-	/// </summary>
-	public static async Task WriteFrameAsync(Stream stream, NetOpsMessage message, CancellationToken cancellationToken = default)
-	{
-		byte[] frameBytes = EncodeFrame(message);
-		await stream.WriteAsync(frameBytes, cancellationToken).ConfigureAwait(false);
-		await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-	}
-
-	/// <summary>
-	/// Đọc frame bất đồng bộ từ NetworkStream; xử lý an toàn dính gói và phân mảnh
-	/// Trả về null nếu Stream đóng an toàn (Graceful EOF)
-	/// </summary>
-	public static async Task<NetOpsMessage?> ReadFrameAsync(Stream stream, CancellationToken cancellationToken = default)
-	{
-		byte[] headerBuffer = new byte[HeaderSize];
-		int headerBytesRead = 0;
-
-		// Vòng lặp đọc đủ 4 bytes Header
-		while (headerBytesRead < HeaderSize)
-		{
-			int read = await stream.ReadAsync(
-				headerBuffer.AsMemory(headerBytesRead, HeaderSize - headerBytesRead),
-				cancellationToken).ConfigureAwait(false);
-
-			if (read == 0)
-			{
-				if (headerBytesRead == 0) return null; // Đối tác đóng kết nối bình thường
-				throw new EndOfStreamException("Connection terminated prematurely while reading frame header.");
-			}
-
-			headerBytesRead += read;
-		}
-
-		int payloadLength = BinaryPrimitives.ReadInt32BigEndian(headerBuffer);
-		if (payloadLength <= 0 || payloadLength > MaxPayloadSize)
-		{
-			throw new InvalidDataException($"Invalid frame payload size received: {payloadLength} bytes.");
-		}
-
-		// Vòng lặp đọc đủ payloadLength bytes
-		byte[] payloadBuffer = new byte[payloadLength];
-		int payloadBytesRead = 0;
-
-		while (payloadBytesRead < payloadLength)
-		{
-			int read = await stream.ReadAsync(
-				payloadBuffer.AsMemory(payloadBytesRead, payloadLength - payloadBytesRead),
-				cancellationToken).ConfigureAwait(false);
-
-			if (read == 0)
-			{
-				throw new EndOfStreamException($"Connection terminated prematurely while reading payload.");
-			}
-
-			payloadBytesRead += read;
-		}
-
-		return JsonSerializer.Deserialize<NetOpsMessage>(payloadBuffer, JsonOptions)
-			   ?? throw new InvalidDataException("Failed to deserialize payload into NetOpsMessage.");
-	}
+    /// <summary>
+    /// Đọc frame bất đồng bộ từ Stream qua tầng Framing; xử lý an toàn dính gói và phân mảnh.
+    /// Trả về null nếu Stream đóng an toàn (Graceful EOF).
+    /// </summary>
+    /// <param name="stream">Luồng dữ liệu nguồn</param>
+    /// <param name="cancellationToken">Mã hủy tác vụ bất đồng bộ</param>
+    /// <returns>Đối tượng NetOpsMessage đã giải mã, hoặc null nếu ngắt kết nối sạch</returns>
+    public static async Task<NetOpsMessage?> ReadFrameAsync(Stream stream, CancellationToken cancellationToken = default)
+    {
+        return await DefaultFrameCodec.Instance.ReadMessageAsync(stream, cancellationToken).ConfigureAwait(false);
+    }
 }
