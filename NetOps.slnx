@@ -1,7 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Agent.Worker/Agent.Worker.csproj" />
-    <Project Path="src/Client.Wpf/Client.Wpf.csproj" />
+    <Project Path="src/Client.WinForms/Client.WinForms.csproj" />
     <Project Path="src/Master.Api/Master.Api.csproj" />
     <Project Path="src/Shared.Contracts/Shared.Contracts.csproj" />
   </Folder>
