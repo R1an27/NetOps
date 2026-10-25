@@ -1,21 +1,12 @@
-using Master.Api.Endpoints;
-using Master.Api.Extensions;
-
-// Khởi tạo đối tượng builder theo mô hình Minimal API của ASP.NET Core.
-// Nạp cấu hình từ appsettings.json, biến môi trường, thiết lập hệ thống ghi log và Kestrel Web Server.
 var builder = WebApplication.CreateBuilder(args);
 
-// Đăng ký dịch vụ phân tích mã nguồn để tự động sinh tài liệu chuẩn OpenAPI (Swagger) cho các API HTTP.
+// Add services to the container.
+// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-// Đăng ký toàn bộ hệ sinh thái dịch vụ Master Server (ConnectionManager, MessageControl, TcpServer, SessionWatchdog)
-// thông qua Extension Method đã được module hóa sạch đẹp theo tiêu chuẩn Clean Architecture.
-builder.Services.AddNetOpsMasterServer(builder.Configuration);
-
-// Đóng băng danh sách dịch vụ và hoàn thiện container Dependency Injection.
 var app = builder.Build();
 
-// Kiểm tra môi trường: Chỉ kích hoạt đường dẫn xem schema OpenAPI khi đang chạy ở môi trường Development.
+// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -23,14 +14,28 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// ==========================================
-// Minimal API Endpoints Quản Trị & Giám Sát
-// ==========================================
-app.MapMasterApiEndpoints();
+var summaries = new[]
+{
+    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
+};
+
+app.MapGet("/weatherforecast", () =>
+{
+    var forecast =  Enumerable.Range(1, 5).Select(index =>
+        new WeatherForecast
+        (
+            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
+            Random.Shared.Next(-20, 55),
+            summaries[Random.Shared.Next(summaries.Length)]
+        ))
+        .ToArray();
+    return forecast;
+})
+.WithName("GetWeatherForecast");
 
 app.Run();
 
-/// <summary>
-/// Cho phép các dự án test tham chiếu đến entry point Program phục vụ Integration Testing.
-/// </summary>
-public partial class Program { }
+record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+{
+    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+}

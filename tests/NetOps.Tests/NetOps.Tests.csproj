@@ -1,23 +1,11 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <AnalysisLevel>latest</AnalysisLevel>
   </PropertyGroup>
-
-  <ItemGroup>
-    <None Update="xunit.runner.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
@@ -34,7 +22,6 @@
     <ProjectReference Include="..\..\src\Shared.Contracts\Shared.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Master.Api\Master.Api.csproj" />
     <ProjectReference Include="..\..\src\Agent.Worker\Agent.Worker.csproj" />
-    <ProjectReference Include="..\..\src\Client.WinForms\Client.WinForms.csproj" />
   </ItemGroup>
 
 </Project>

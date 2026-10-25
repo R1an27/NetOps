@@ -425,45 +425,4 @@ FodyWeavers.xsd
 *.msp
 
 # Official VS Code C# Dev Kit Extension exclusion
-*.lscache
-
-# --------------------------------------------------
-# Project Specific & AI / Agent Workflows
-# --------------------------------------------------
-tasks/
-.agents/
-.gemini/
-.claude/
-.cursor/
-
-# --------------------------------------------------
-# JetBrains Rider & IntelliJ IDEs
-# --------------------------------------------------
-.idea/
-*.sln.iml
-
-# --------------------------------------------------
-# Local Configuration & Secrets (Prevent accidental credential leaks)
-# --------------------------------------------------
-appsettings*.local.json
-appsettings.Local.json
-*.local.settings.json
-
-# --------------------------------------------------
-# OS-generated files (macOS & Windows)
-# --------------------------------------------------
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-[Dd]esktop.ini
-
-# --------------------------------------------------
-# Test Coverage & Profiling
-# --------------------------------------------------
-coverage/
-*.coverage
-*.coveragexml
+#*.lscache
