@@ -71,6 +71,23 @@ Mọi thông điệp truyền qua NetOps Protocol v0 đều tuân thủ cấu tr
 * **`HEARTBEAT_ACK`:** Manager phản hồi xác nhận đã nhận được Heartbeat.
   * `payload`: `{"timestamp": 1728500000000, "acknowledged": true}`
 
+#### 4.1.1. Chu Kỳ Heartbeat & Phát Hiện Mất Kết Nối
+
+* **Payload của PING:** `HeartbeatPayload` gồm `agentId` và thời điểm gửi (Unix mili giây). Master dùng `agentId` để gán danh tính cho session (session mới kết nối mang danh tính `Anonymous` cho đến khi nhận PING đầu tiên).
+* **Phản hồi của PONG:** payload `PONG_ACK`, trường `inReplyTo` bằng `messageId` của PING tương ứng.
+
+| Tham số | Mặc định | Cấu hình |
+|---|---|---|
+| Chu kỳ PING của Agent | 5 giây | `AgentConfig:PingIntervalSeconds` |
+| Chu kỳ quét của watchdog (Master) | 5 giây | `SessionWatchdogService` |
+| Timeout session phía Master | 15 giây (3 chu kỳ PING) | `SessionTimeoutSeconds` |
+| Timeout PONG phía Agent | 3 chu kỳ PING (15 giây) | `AgentNetworkClient.MissedPongLimit` (0 là tắt) |
+| Reconnect backoff của Agent | 3s, gấp đôi mỗi lần (3, 6, 12, 24), tối đa 30s, về 3s khi nối lại thành công | `AgentNetworkClient` |
+
+* **Phía Master:** mỗi lần nhận PING, Master cập nhật `LastSeenAt` của session. Session quá `SessionTimeoutSeconds` không có PING sẽ bị watchdog đóng và loại khỏi danh sách.
+* **Phía Agent:** nếu quá `MissedPongLimit` chu kỳ PING liên tiếp mà không nhận được PONG, Agent coi Master đã chết (kể cả khi socket vẫn mở, tức half-open), đóng kết nối và kết nối lại theo backoff.
+* **Quy tắc chọn timeout:** tối thiểu 3 lần chu kỳ PING, để mất vài gói vẫn không báo chết nhầm.
+
 ### 4.2. Thông Điệp Xác Thực (Authentication Baseline)
 * **`AUTH`:** Được gửi từ Agent ngay sau khi kết nối TCP được thiết lập.
   * `payload`: `{"agentId": "string", "token": "string", "osInfo": "string", "hostname": "string"}`
