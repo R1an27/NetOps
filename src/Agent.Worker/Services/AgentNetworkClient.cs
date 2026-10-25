@@ -20,6 +20,9 @@ public class AgentNetworkClient : IAgentNetworkClient
     private readonly object _channelLock = new();
     private ISafeFrameChannel? _activeChannel;
 
+    // Mốc thời gian (TickCount64, mili giây) của lần cuối Agent nghe thấy Master (nhận PONG hoặc vừa kết nối xong).
+    private long _lastPongTickMs = Environment.TickCount64;
+
     /// <summary>
     /// Cho biết Agent có đang duy trì kết nối mạng ổn định tới Master hay không.
     /// </summary>
@@ -29,6 +32,14 @@ public class AgentNetworkClient : IAgentNetworkClient
     /// Địa chỉ endpoint của Master mà Agent đang kết nối tới (dạng Host:Port), hoặc null nếu chưa kết nối.
     /// </summary>
     public string? ConnectedEndpoint { get; private set; }
+
+    /// <summary>
+    /// Số chu kỳ PING liên tiếp không nhận được PONG thì Agent coi kết nối đã chết
+    /// (ví dụ Master mất điện hoặc NAT xóa phiên nên không có gói đóng kết nối, socket vẫn "mở" - half-open)
+    /// và chủ động đóng để kết nối lại theo Exponential Backoff.
+    /// Mặc định 3 (PING 5s thì timeout khoảng 15s, trùng với session timeout của Master). Đặt 0 để tắt cơ chế này.
+    /// </summary>
+    public int MissedPongLimit { get; set; } = 3;
 
     /// <summary>
     /// Bộ điều phối và phân loại thông điệp chuẩn NetOps Protocol v0 gắn liền với client mạng này.
@@ -77,6 +88,9 @@ public class AgentNetworkClient : IAgentNetworkClient
 
         Action<NetOpsMessage, string?> onPong = (msg, payload) =>
         {
+            // Ghi nhận thời điểm nhận PONG gần nhất để phát hiện kết nối chết ngầm
+            Interlocked.Exchange(ref _lastPongTickMs, Environment.TickCount64);
+
             _logger.LogInformation("[Agent {AgentId}] Received PONG (InReplyTo: {InReplyTo}, RequestId: {RequestId}, Payload: {Payload})",
                 agentId, msg.InReplyTo, msg.RequestId, payload);
         };
@@ -98,6 +112,9 @@ public class AgentNetworkClient : IAgentNetworkClient
                     // Khi kết nối thành công, đặt lại độ trễ backoff về mức cơ sở 3s
                     reconnectDelaySeconds = 3;
                     ConnectedEndpoint = $"{host}:{port}";
+
+                    // Mốc "vừa nghe thấy Master": tính từ lúc kết nối thành công
+                    Interlocked.Exchange(ref _lastPongTickMs, Environment.TickCount64);
 
                     _logger.LogInformation("[Agent {AgentId}] Successfully connected to Master at {Host}:{Port}!",
                         agentId, host, port);
@@ -155,6 +172,21 @@ public class AgentNetworkClient : IAgentNetworkClient
                         {
                             while (!linkedCts.Token.IsCancellationRequested)
                             {
+                                // Phát hiện kết nối chết ngầm: quá nhiều chu kỳ PING mà Master không trả PONG
+                                if (MissedPongLimit > 0)
+                                {
+                                    long silentMs = Environment.TickCount64 - Interlocked.Read(ref _lastPongTickMs);
+                                    double limitMs = pingInterval.TotalMilliseconds * MissedPongLimit;
+                                    if (silentMs > limitMs)
+                                    {
+                                        _logger.LogWarning(
+                                            "[Agent {AgentId}] No PONG for {Silent}ms (limit {Limit}ms). Closing connection to reconnect.",
+                                            agentId, silentMs, limitMs);
+                                        linkedCts.Cancel();
+                                        break;
+                                    }
+                                }
+
                                 // Đóng gói Payload chuẩn hóa theo DTO HeartbeatPayload (Mục 4.1 protocol-v0-spec)
                                 var heartbeatPayload = new HeartbeatPayload(agentId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                                 var ping = NetOpsMessage.CreateRequest(MessageType.Ping, heartbeatPayload);
