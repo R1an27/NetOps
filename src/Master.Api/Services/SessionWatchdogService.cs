@@ -2,6 +2,7 @@ using Master.Api.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using ServerManager.Shared.Contracts.Models;
 
 namespace Master.Api.Services;
 
@@ -27,6 +28,11 @@ public class SessionWatchdogService : BackgroundService
     public int TimeoutSeconds => Math.Max(1, _options.Value.SessionTimeoutSeconds);
 
     /// <summary>
+    /// Sự kiện kích hoạt khi Watchdog phát hiện một phiên kết nối bị timeout (mất nhịp tim quá hạn).
+    /// </summary>
+    public event Action<AgentSession, DisconnectReason>? SessionTimedOut;
+
+    /// <summary>
     /// Khởi tạo SessionWatchdogService với các phụ thuộc cần thiết.
     /// </summary>
     public SessionWatchdogService(
@@ -48,13 +54,18 @@ public class SessionWatchdogService : BackgroundService
             "[SessionWatchdog] Started monitoring with interval {Interval}s and session timeout {Timeout}s",
             IntervalSeconds, TimeoutSeconds);
 
+        /// Tạo một bộ đếm thời gian với chu kỳ quét định kỳ
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(IntervalSeconds));
 
         try
         {
+            /// Hàm này trả về true nếu bộ đếm thời gian đã được kích hoạt
+            /// và false nếu quá trình dừng đã được yêu cầu
             while (!stoppingToken.IsCancellationRequested && await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
+                /// thực hiện 1 đợt quét dọn
                 int purged = PurgeTimedOutSessions();
+                /// nếu có session bị xóa
                 if (purged > 0)
                 {
                     _logger.LogInformation(
@@ -79,6 +90,7 @@ public class SessionWatchdogService : BackgroundService
 
     /// <summary>
     /// Quét và cưỡng chế giải phóng tất cả các session quá hạn thời gian chờ.
+    /// Tự động đánh dấu Agent chuyển sang trạng thái Offline với lý do HeartbeatTimeout.
     /// Cho phép gọi trực tiếp từ Unit Test hoặc các trình điều phối bên ngoài một cách tất định.
     /// </summary>
     /// <param name="now">Mốc thời gian hiện tại tùy chọn (dùng cho unit test mô phỏng tương lai)</param>
@@ -99,12 +111,31 @@ public class SessionWatchdogService : BackgroundService
                 if (elapsed.TotalSeconds > timeoutSec)
                 {
                     _logger.LogWarning(
-                        "[SessionWatchdog] Session '{SessionId}' (AgentId: '{AgentId}', EndPoint: '{EndPoint}') timed out after {Elapsed:F1}s (threshold: {Threshold}s). Purging half-open socket.",
+                        "[SessionWatchdog] Session '{SessionId}' (AgentId: '{AgentId}', EndPoint: '{EndPoint}') timed out after {Elapsed:F1}s (threshold: {Threshold}s). Marking Agent OFFLINE and purging half-open socket.",
                         session.SessionId, session.AgentId ?? "Unknown", session.RemoteEndPoint, elapsed.TotalSeconds, timeoutSec);
 
-                    if (_connectionManager.TryUnregister(session.SessionId, out _))
+                    // 1. Nếu session đã định danh được AgentId, chủ động đánh dấu Agent chuyển sang trạng thái Offline
+                    if (!string.IsNullOrWhiteSpace(session.AgentId))
+                    {
+                        _connectionManager.MarkAgentOffline(session.AgentId, DisconnectReason.HeartbeatTimeout, currentTime);
+                    }
+
+                    // 2. Gỡ bỏ session khỏi ConnectionManager với lý do HeartbeatTimeout
+                    if (_connectionManager.TryUnregister(session.SessionId, out _, DisconnectReason.HeartbeatTimeout))
                     {
                         purgedCount++;
+
+                        // 3. Kích hoạt sự kiện SessionTimedOut cho các thành phần quan tâm
+                        try
+                        {
+                            SessionTimedOut?.Invoke(session, DisconnectReason.HeartbeatTimeout);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[SessionWatchdog] Error invoking SessionTimedOut event for {SessionId}", session.SessionId);
+                        }
+
+                        // 4. Đóng kết nối socket triệt để để chống cạn kiệt socket descriptor của hệ điều hành
                         CloseSessionSocket(session);
                     }
                 }
@@ -125,6 +156,7 @@ public class SessionWatchdogService : BackgroundService
     {
         try
         {
+            /// Đóng kết nối TCP
             session.Client?.Close();
         }
         catch (Exception ex)
@@ -134,6 +166,7 @@ public class SessionWatchdogService : BackgroundService
 
         try
         {
+            /// Đóng luồng đọc ghi
             session.SafeStream.Dispose();
         }
         catch (Exception ex)

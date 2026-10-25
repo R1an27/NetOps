@@ -11,6 +11,7 @@ namespace Master.Api.Services;
 public class ConnectionManager : IConnectionManager
 {
     private readonly ConcurrentDictionary<string, AgentSession> _sessions = new();
+    private readonly ConcurrentDictionary<string, AgentStatusRecord> _agentRegistry = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<ConnectionManager>? _logger;
 
     /// <summary>
@@ -29,6 +30,16 @@ public class ConnectionManager : IConnectionManager
     public event Action<AgentSession>? SessionUnregistered;
 
     /// <summary>
+    /// Sự kiện kích hoạt khi trạng thái hoạt động của Agent thay đổi (Online <-> Offline).
+    /// </summary>
+    public event Action<AgentStatusRecord>? AgentStatusChanged;
+
+    /// <summary>
+    /// Sự kiện kích hoạt khi một Agent bị phát hiện đã ngắt kết nối hoặc timeout (chuyển sang Offline).
+    /// </summary>
+    public event Action<AgentStatusRecord>? AgentOfflineDetected;
+
+    /// <summary>
     /// Khởi tạo ConnectionManager với bộ ghi log tùy chọn.
     /// </summary>
     public ConnectionManager(ILogger<ConnectionManager>? logger = null)
@@ -38,6 +49,9 @@ public class ConnectionManager : IConnectionManager
 
     /// <summary>
     /// Đăng ký một session mới vào hệ thống quản lý.
+    /// Tự động cập nhật Agent sang trạng thái Online nếu session đã có AgentId.
+    /// trycatch để kích hoạt sự kiện để thông báo cho các module khác
+    /// Nếu session đã có trong hệ thì báo lỗi
     /// </summary>
     public bool TryRegister(AgentSession session)
     {
@@ -48,6 +62,12 @@ public class ConnectionManager : IConnectionManager
             _logger?.LogInformation(
                 "[ConnectionManager] Registered session {SessionId} (Endpoint: {EndPoint}, AgentId: {AgentId}). Total active: {Count}",
                 session.SessionId, session.RemoteEndPoint, session.AgentId ?? "Anonymous", _sessions.Count);
+
+            // Nếu Agent đã định danh rõ danh tính thì tự động đưa vào AgentRegistry với trạng thái Online
+            if (!string.IsNullOrWhiteSpace(session.AgentId))
+            {
+                MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
+            }
 
             try
             {
@@ -66,9 +86,18 @@ public class ConnectionManager : IConnectionManager
     }
 
     /// <summary>
-    /// Gỡ bỏ một session khỏi hệ thống quản lý theo SessionId.
+    /// Gỡ bỏ một session khỏi hệ thống quản lý theo SessionId (ngắt kết nối mặc định GracefulDisconnect).
     /// </summary>
     public bool TryUnregister(string sessionId, out AgentSession? session)
+    {
+        return TryUnregister(sessionId, out session, DisconnectReason.GracefulDisconnect);
+    }
+
+    /// <summary>
+    /// Gỡ bỏ một session khỏi hệ thống quản lý kèm nguyên nhân ngắt kết nối.
+    /// Tự động đánh dấu Agent chuyển sang Offline và kích hoạt các sự kiện giám sát.
+    /// </summary>
+    public bool TryUnregister(string sessionId, out AgentSession? session, DisconnectReason reason)
     {
         if (string.IsNullOrEmpty(sessionId))
         {
@@ -79,8 +108,14 @@ public class ConnectionManager : IConnectionManager
         if (_sessions.TryRemove(sessionId, out session))
         {
             _logger?.LogInformation(
-                "[ConnectionManager] Unregistered session {SessionId} (Endpoint: {EndPoint}, AgentId: {AgentId}). Total active: {Count}",
-                sessionId, session.RemoteEndPoint, session.AgentId ?? "Anonymous", _sessions.Count);
+                "[ConnectionManager] Unregistered session {SessionId} (Endpoint: {EndPoint}, AgentId: {AgentId}, Reason: {Reason}). Total active: {Count}",
+                sessionId, session.RemoteEndPoint, session.AgentId ?? "Anonymous", reason, _sessions.Count);
+
+            // Nếu session có AgentId, đánh dấu Agent đó là Offline trong AgentRegistry
+            if (!string.IsNullOrWhiteSpace(session.AgentId))
+            {
+                MarkAgentOffline(session.AgentId, reason, DateTimeOffset.UtcNow);
+            }
 
             try
             {
@@ -95,6 +130,141 @@ public class ConnectionManager : IConnectionManager
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Đánh dấu hoặc cập nhật Agent sang trạng thái Online.
+    /// Kích hoạt sự kiện AgentStatusChanged nếu trạng thái có sự thay đổi.
+    /// </summary>
+    public void MarkAgentOnline(string agentId, string sessionId, string remoteEndPoint, DateTimeOffset? seenAt = null)
+    {
+        if (string.IsNullOrWhiteSpace(agentId)) return;
+
+        var now = seenAt ?? DateTimeOffset.UtcNow;
+        bool statusChanged = false;
+
+        var record = _agentRegistry.AddOrUpdate(
+            agentId,
+            addValueFactory: id =>
+            {
+                statusChanged = true;
+                return new AgentStatusRecord(id, sessionId, remoteEndPoint, AgentStatus.Online, now, now);
+            },
+            updateValueFactory: (id, existing) =>
+            {
+                if (existing.Status != AgentStatus.Online)
+                {
+                    statusChanged = true;
+                }
+
+                existing.Status = AgentStatus.Online;
+                existing.CurrentSessionId = sessionId;
+                existing.RemoteEndPoint = remoteEndPoint;
+                existing.LastSeenAt = now;
+                existing.DisconnectedAt = null;
+                existing.DisconnectReason = DisconnectReason.None;
+                return existing;
+            });
+
+        _logger?.LogInformation(
+            "[ConnectionManager] Agent '{AgentId}' is marked ONLINE (Session: {SessionId}, EndPoint: {EndPoint})",
+            agentId, sessionId, remoteEndPoint);
+
+        if (statusChanged)
+        {
+            try
+            {
+                AgentStatusChanged?.Invoke(record);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "[ConnectionManager] Error invoking AgentStatusChanged for {AgentId}", agentId);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Đánh dấu Agent sang trạng thái Offline kèm nguyên nhân ngắt kết nối (ví dụ: HeartbeatTimeout).
+    /// Kích hoạt sự kiện AgentOfflineDetected và AgentStatusChanged.
+    /// </summary>
+    public void MarkAgentOffline(string agentId, DisconnectReason reason, DateTimeOffset? disconnectedAt = null)
+    {
+        if (string.IsNullOrWhiteSpace(agentId)) return;
+
+        var timestamp = disconnectedAt ?? DateTimeOffset.UtcNow;
+        bool statusChanged = false;
+
+        var record = _agentRegistry.AddOrUpdate(
+            agentId,
+            addValueFactory: id =>
+            {
+                statusChanged = true;
+                return new AgentStatusRecord(id, null, "Unknown", AgentStatus.Offline, timestamp, timestamp)
+                {
+                    DisconnectedAt = timestamp,
+                    DisconnectReason = reason
+                };
+            },
+            updateValueFactory: (id, existing) =>
+            {
+                if (existing.Status != AgentStatus.Offline)
+                {
+                    statusChanged = true;
+                }
+
+                existing.Status = AgentStatus.Offline;
+                existing.CurrentSessionId = null;
+                existing.DisconnectedAt = timestamp;
+                existing.DisconnectReason = reason;
+                return existing;
+            });
+
+        _logger?.LogWarning(
+            "[ConnectionManager] Agent '{AgentId}' is marked OFFLINE (Reason: {Reason}, DisconnectedAt: {DisconnectedAt:u})",
+            agentId, reason, timestamp);
+
+        if (statusChanged)
+        {
+            try
+            {
+                AgentStatusChanged?.Invoke(record);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "[ConnectionManager] Error invoking AgentStatusChanged for {AgentId}", agentId);
+            }
+
+            try
+            {
+                AgentOfflineDetected?.Invoke(record);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "[ConnectionManager] Error invoking AgentOfflineDetected for {AgentId}", agentId);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lấy danh sách toàn bộ trạng thái Agent đã biết (hỗ trợ lọc theo trạng thái Online/Offline).
+    /// </summary>
+    public IReadOnlyCollection<AgentStatusRecord> GetAllAgentStatuses(AgentStatus? statusFilter = null)
+    {
+        var all = _agentRegistry.Values.ToArray();
+        return statusFilter.HasValue
+            ? all.Where(a => a.Status == statusFilter.Value).ToArray() 
+            // nếu có bộ lọc thì trả về status phù hợp
+            : all; //nếu k có bộ lọc thì trả về tất cả status
+    }
+
+    /// <summary>
+    /// Tra cứu thông tin trạng thái của một Agent cụ thể.
+    /// </summary>
+    public AgentStatusRecord? GetAgentStatus(string agentId)
+    {
+        if (string.IsNullOrWhiteSpace(agentId)) return null;
+        _agentRegistry.TryGetValue(agentId, out var record);
+        return record;
     }
 
     /// <summary>
@@ -141,12 +311,15 @@ public class ConnectionManager : IConnectionManager
         int successCount = 0;
         int failedCount = 0;
 
+        ///khởi tạo các tác vụ gửi tin nhắn cùng một lúc cho tất cả Agent
         var tasks = sessions.Select(async session =>
         {
             try
             {
                 await session.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
                 Interlocked.Increment(ref successCount);
+                /// để đảm bảo khi hàng trăm luồng cùng tăng biến này một lúc thì 
+                /// số đếm vẫn chuẩn xác, không bị xung đột bộ nhớ
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -161,7 +334,9 @@ public class ConnectionManager : IConnectionManager
         });
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
-
+        ///Tạm dừng thực thi hàm và đợi tất cả các tác vụ gửi tin nhắn song song trong 
+        /// danh sách tasks hoàn thành (dù thành công hay thất bại) 
+        /// mới cho code chạy tiếp xuống bên dưới
         _logger?.LogInformation(
             "[ConnectionManager] Broadcast message {MessageType} (Id: {MessageId}) completed. Targeted: {Total}, Succeeded: {Success}, Failed: {Failed}",
             message.MessageType, message.MessageId, sessions.Length, successCount, failedCount);
@@ -215,6 +390,9 @@ public class ConnectionManager : IConnectionManager
         return await SendToSessionInternalAsync(session, message, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Hàm nội bộ thực thi việc gửi tin nhắn tới một session cụ thể một cách an toàn.
+    /// </summary>
     private async Task<bool> SendToSessionInternalAsync(AgentSession session, NetOpsMessage message, CancellationToken cancellationToken)
     {
         try
@@ -227,6 +405,7 @@ public class ConnectionManager : IConnectionManager
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            ///Ném lại ngoại lệ nếu lý do dừng là do yêu cầu hủy thao tác
             throw;
         }
         catch (Exception ex)

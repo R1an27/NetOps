@@ -67,6 +67,9 @@ public class TcpManagerServer : BackgroundService
     {
     }
 
+    /// <summary>
+    /// Vòng lặp lắng nghe kết nối TCP từ các Agent
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
@@ -118,6 +121,9 @@ public class TcpManagerServer : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Hàm này sẽ chạy khi có client kết nối tới
+    /// </summary>
     private async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
     {
         string clientEndpoint = client.Client.RemoteEndPoint?.ToString() ?? "Unknown";
@@ -125,6 +131,7 @@ public class TcpManagerServer : BackgroundService
 
         string sessionId = $"session-{Guid.NewGuid():N}";
         AgentSession? session = null;
+        DisconnectReason disconnectReason = DisconnectReason.GracefulDisconnect;
 
         // Khi client thoát vòng lặp (do ngắt kết nối, lỗi mạng hoặc server tắt)
         // khối using đảm bảo cổng Socket và luồng NetworkStream được đóng triệt để
@@ -137,6 +144,7 @@ public class TcpManagerServer : BackgroundService
 
             try
             {
+                /// Vòng lặp đọc & phản hồi tin nhắn
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     // Server gọi safeStream.ReadMessageAsync(cancellationToken): 
@@ -150,9 +158,11 @@ public class TcpManagerServer : BackgroundService
                     if (message == null)
                     {
                         _logger.LogInformation("[Master] Client {EndPoint} disconnected gracefully (EOF)", clientEndpoint);
+                        disconnectReason = DisconnectReason.GracefulDisconnect;
                         break;
                     }
 
+                    /// Cập nhật thời gian cuối cùng thấy Agent
                     session.LastSeenAt = DateTimeOffset.UtcNow;
 
                     _logger.LogInformation("[Master] Received message '{Type}' (Id: {MessageId}) from {EndPoint}",
@@ -160,6 +170,7 @@ public class TcpManagerServer : BackgroundService
 
                     // Phân loại và điều phối xử lý nghiệp vụ thông qua IMasterMessageControl
                     var response = await _messageControl.InvokeAsync(session, message, cancellationToken).ConfigureAwait(false);
+                    /// Nếu có response từ controller thì gửi cho agent
                     if (response != null)
                     {
                         await safeStream.WriteMessageAsync(response, cancellationToken).ConfigureAwait(false);
@@ -171,16 +182,19 @@ public class TcpManagerServer : BackgroundService
             catch (OperationCanceledException)
             {
                 _logger.LogInformation("[Master] Session with {EndPoint} cancelled due to server shutdown", clientEndpoint);
+                disconnectReason = DisconnectReason.ServerShutdown;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning("[Master] Connection ended with {EndPoint}: {Message}", clientEndpoint, ex.Message);
+                disconnectReason = DisconnectReason.NetworkFault;
             }
             finally
             {
+                /// Khi agent ngắt kết nối thì xóa session
                 if (session != null)
                 {
-                    _connectionManager.TryUnregister(session.SessionId, out _);
+                    _connectionManager.TryUnregister(session.SessionId, out _, disconnectReason);
                 }
             }
         }
@@ -188,6 +202,9 @@ public class TcpManagerServer : BackgroundService
         _logger.LogInformation("[Master] Cleaned up session with {EndPoint}", clientEndpoint);
     }
 
+    /// <summary>
+    /// Dọn dẹp tài nguyên khi Master Server dừng
+    /// </summary>
     public override void Dispose()
     {
         _listener?.Stop();
