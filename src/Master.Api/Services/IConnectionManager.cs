@@ -24,6 +24,16 @@ public interface IConnectionManager
     event Action<AgentSession>? SessionUnregistered;
 
     /// <summary>
+    /// Sự kiện kích hoạt khi trạng thái hoạt động của Agent thay đổi (Online <-> Offline).
+    /// </summary>
+    event Action<AgentStatusRecord>? AgentStatusChanged;
+
+    /// <summary>
+    /// Sự kiện kích hoạt chuyên biệt khi một Agent bị phát hiện đã ngắt kết nối hoặc timeout (chuyển sang Offline).
+    /// </summary>
+    event Action<AgentStatusRecord>? AgentOfflineDetected;
+
+    /// <summary>
     /// Đăng ký một session mới vào hệ thống quản lý.
     /// </summary>
     /// <param name="session">Phiên kết nối của Agent</param>
@@ -31,12 +41,50 @@ public interface IConnectionManager
     bool TryRegister(AgentSession session);
 
     /// <summary>
-    /// Gỡ bỏ một session khỏi hệ thống quản lý theo SessionId.
+    /// Gỡ bỏ một session khỏi hệ thống quản lý theo SessionId (mặc định ngắt kết nối thông thường).
     /// </summary>
     /// <param name="sessionId">Mã định danh phiên</param>
     /// <param name="session">Phiên được gỡ bỏ (nếu tìm thấy)</param>
     /// <returns>True nếu gỡ bỏ thành công, False nếu không tìm thấy</returns>
     bool TryUnregister(string sessionId, out AgentSession? session);
+
+    /// <summary>
+    /// Gỡ bỏ một session khỏi hệ thống quản lý kèm nguyên nhân ngắt kết nối (Graceful, HeartbeatTimeout, NetworkFault).
+    /// </summary>
+    /// <param name="sessionId">Mã định danh phiên</param>
+    /// <param name="session">Phiên được gỡ bỏ (nếu tìm thấy)</param>
+    /// <param name="reason">Nguyên nhân ngắt kết nối</param>
+    /// <returns>True nếu gỡ bỏ thành công, False nếu không tìm thấy</returns>
+    bool TryUnregister(string sessionId, out AgentSession? session, DisconnectReason reason);
+
+    /// <summary>
+    /// Đánh dấu hoặc cập nhật trạng thái của Agent sang Online khi nhận kết nối hoặc nhận tín hiệu nhịp tim.
+    /// </summary>
+    /// <param name="agentId">Mã định danh Agent</param>
+    /// <param name="sessionId">Mã phiên socket hiện tại</param>
+    /// <param name="remoteEndPoint">Địa chỉ kết nối từ xa</param>
+    /// <param name="seenAt">Thời điểm nhận tín hiệu (mặc định UtcNow)</param>
+    void MarkAgentOnline(string agentId, string sessionId, string remoteEndPoint, DateTimeOffset? seenAt = null);
+
+    /// <summary>
+    /// Đánh dấu Agent chuyển sang trạng thái Offline kèm nguyên nhân (ví dụ do Watchdog phát hiện mất nhịp tim).
+    /// </summary>
+    /// <param name="agentId">Mã định danh Agent</param>
+    /// <param name="reason">Nguyên nhân ngắt kết nối</param>
+    /// <param name="disconnectedAt">Thời điểm ngắt kết nối (mặc định UtcNow)</param>
+    void MarkAgentOffline(string agentId, DisconnectReason reason, DateTimeOffset? disconnectedAt = null);
+
+    /// <summary>
+    /// Lấy danh sách toàn bộ các bản ghi trạng thái của tất cả Agent đã biết (kể cả Online lẫn Offline).
+    /// </summary>
+    /// <param name="statusFilter">Bộ lọc trạng thái tùy chọn (null: lấy toàn bộ)</param>
+    IReadOnlyCollection<AgentStatusRecord> GetAllAgentStatuses(AgentStatus? statusFilter = null);
+
+    /// <summary>
+    /// Tra cứu bản ghi trạng thái của một Agent cụ thể theo AgentId.
+    /// </summary>
+    /// <param name="agentId">Mã định danh Agent</param>
+    AgentStatusRecord? GetAgentStatus(string agentId);
 
     /// <summary>
     /// Lấy thông tin session theo SessionId.

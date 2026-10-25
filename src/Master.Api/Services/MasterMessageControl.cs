@@ -17,6 +17,7 @@ namespace Master.Api.Services;
 /// </summary>
 public class MasterMessageControl : IMasterMessageControl
 {
+    private readonly IConnectionManager? _connectionManager;
     private readonly ILogger<MasterMessageControl> _logger;
 
     /// <summary>
@@ -35,15 +36,27 @@ public class MasterMessageControl : IMasterMessageControl
     public event Action<AgentSession, CommandDonePayload>? CommandDoneReceived;
 
     /// <summary>
-    /// Khởi tạo MasterMessageControl với ILogger tùy chọn.
+    /// Khởi tạo MasterMessageControl với IConnectionManager và ILogger tùy chọn.
     /// </summary>
-    public MasterMessageControl(ILogger<MasterMessageControl>? logger = null)
+    public MasterMessageControl(
+        IConnectionManager? connectionManager = null,
+        ILogger<MasterMessageControl>? logger = null)
     {
+        _connectionManager = connectionManager;
         _logger = logger ?? NullLogger<MasterMessageControl>.Instance;
     }
 
     /// <summary>
+    /// Overload khởi tạo MasterMessageControl chỉ nhận ILogger (hỗ trợ kiểm thử đơn vị).
+    /// </summary>
+    public MasterMessageControl(ILogger<MasterMessageControl>? logger)
+        : this(null, logger)
+    {
+    }
+
+    /// <summary>
     /// Xử lý phân loại thông điệp đến một cách bất đồng bộ và trả về thông điệp phản hồi (nếu có).
+    /// Tự động cập nhật mốc thời gian nhận gói tin (LastSeenAt) cho Agent để phục vụ Watchdog.
     /// </summary>
     public Task<NetOpsMessage?> InvokeAsync(AgentSession session, NetOpsMessage message, CancellationToken cancellationToken = default)
     {
@@ -52,6 +65,12 @@ public class MasterMessageControl : IMasterMessageControl
 
         // Cập nhật mốc thời gian nhận gói tin hợp lệ gần nhất của session
         session.LastSeenAt = DateTimeOffset.UtcNow;
+
+        // Nếu session đã có AgentId thì đồng bộ cập nhật vào AgentRegistry
+        if (!string.IsNullOrWhiteSpace(session.AgentId))
+        {
+            _connectionManager?.MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
+        }
 
         _logger.LogInformation(
             "[MasterMessageControl] Handling message '{Type}' (Id: {MessageId}) from session {SessionId} (Endpoint: {EndPoint})",
@@ -111,7 +130,9 @@ public class MasterMessageControl : IMasterMessageControl
     }
 
     #region Message Handlers
-
+    /// <summary>
+    /// Xử lý thông điệp Ping
+    /// </summary>
     private NetOpsMessage HandlePing(AgentSession session, NetOpsMessage message)
     {
         // Tự động nhận diện và gán AgentId nếu gói tin PING chứa HeartbeatPayload và session chưa có AgentId
@@ -121,6 +142,7 @@ public class MasterMessageControl : IMasterMessageControl
             !string.IsNullOrWhiteSpace(heartbeat.AgentId))
         {
             session.AgentId = heartbeat.AgentId;
+            _connectionManager?.MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
             _logger.LogInformation(
                 "[MasterMessageControl] Identified Agent '{AgentId}' from PING payload on session {SessionId}",
                 session.AgentId, session.SessionId);
@@ -133,6 +155,9 @@ public class MasterMessageControl : IMasterMessageControl
         return message.CreateResponse(MessageType.Pong, "PONG_ACK");
     }
 
+    /// <summary>
+    /// Xử lý thông điệp Heartbeat
+    /// </summary>
     private NetOpsMessage HandleHeartbeat(AgentSession session, NetOpsMessage message)
     {
         if (message.TryGetPayload<HeartbeatPayload>(out var heartbeat) && heartbeat != null)
@@ -140,6 +165,11 @@ public class MasterMessageControl : IMasterMessageControl
             if (!string.IsNullOrEmpty(heartbeat.AgentId))
             {
                 session.AgentId = heartbeat.AgentId;
+            }
+
+            if (!string.IsNullOrEmpty(session.AgentId))
+            {
+                _connectionManager?.MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
             }
 
             _logger.LogInformation(
@@ -152,11 +182,14 @@ public class MasterMessageControl : IMasterMessageControl
                 "[MasterMessageControl] Received HEARTBEAT with empty or unparseable payload on session {SessionId}",
                 session.SessionId);
         }
-
+        /// Tạo gói tin phản hồi HeartbeatAck
         var ackPayload = new HeartbeatAckPayload(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), true);
         return message.CreateResponse(MessageType.HeartbeatAck, ackPayload);
     }
 
+    /// <summary>
+    /// Xử lý thông điệp Auth
+    /// </summary>
     private NetOpsMessage HandleAuth(AgentSession session, NetOpsMessage message)
     {
         if (message.TryGetPayload<AuthRequestPayload>(out var auth) && auth != null)
@@ -164,6 +197,7 @@ public class MasterMessageControl : IMasterMessageControl
             if (!string.IsNullOrEmpty(auth.AgentId))
             {
                 session.AgentId = auth.AgentId;
+                _connectionManager?.MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
             }
 
             session.IsAuthenticated = true;
@@ -171,7 +205,7 @@ public class MasterMessageControl : IMasterMessageControl
             _logger.LogInformation(
                 "[MasterMessageControl] Authenticated Agent '{AgentId}' (OS: {OS}, Host: {Host}, Session: {SessionId})",
                 session.AgentId ?? "Unknown", auth.OsInfo ?? "N/A", auth.Hostname ?? "N/A", session.SessionId);
-
+            /// Tạo gói tin phản hồi AuthOk
             var authOkPayload = new AuthResponsePayload(true, session.SessionId, message: "Authentication successful");
             return message.CreateResponse(MessageType.AuthOk, authOkPayload);
         }
@@ -179,7 +213,7 @@ public class MasterMessageControl : IMasterMessageControl
         _logger.LogWarning(
             "[MasterMessageControl] Authentication failed on session {SessionId} due to malformed payload",
             session.SessionId);
-
+        /// Tạo gói tin phản hồi AuthFailed
         var authFailedPayload = new AuthResponsePayload(
             false,
             errorCode: "INVALID_AUTH_PAYLOAD",
@@ -188,6 +222,9 @@ public class MasterMessageControl : IMasterMessageControl
         return message.CreateResponse(MessageType.AuthFailed, authFailedPayload);
     }
 
+    /// <summary>
+    /// Xử lý thông điệp Metrics
+    /// </summary>
     private NetOpsMessage? HandleMetrics(AgentSession session, NetOpsMessage message)
     {
         if (message.TryGetPayload<MetricsPayload>(out var metrics) && metrics != null)
@@ -216,10 +253,13 @@ public class MasterMessageControl : IMasterMessageControl
         {
             _logger.LogWarning("[MasterMessageControl] Unparseable METRICS payload from session {SessionId}", session.SessionId);
         }
-
+        /// Không có gói tin phản hồi
         return null;
     }
 
+    /// <summary>
+    /// Xử lý thông điệp Command
+    /// </summary>
     private NetOpsMessage? HandleCommand(AgentSession session, NetOpsMessage message)
     {
         if (message.TryGetPayload<CommandRequestPayload>(out var command) && command != null)
@@ -228,10 +268,13 @@ public class MasterMessageControl : IMasterMessageControl
                 "[MasterMessageControl] Observed COMMAND '{CmdId}' on session {SessionId}: CommandLine='{CommandLine}', Timeout={Timeout}s, WorkingDir='{WorkingDir}'",
                 command.CommandId, session.SessionId, command.CommandLine, command.TimeoutSeconds, command.WorkingDir ?? "Default");
         }
-
+        /// Không có gói tin phản hồi
         return null;
     }
 
+    /// <summary>
+    /// Xử lý thông điệp CommandOutput
+    /// </summary>
     private NetOpsMessage? HandleCommandOutput(AgentSession session, NetOpsMessage message)
     {
         if (message.TryGetPayload<CommandOutputPayload>(out var output) && output != null)
@@ -253,6 +296,9 @@ public class MasterMessageControl : IMasterMessageControl
         return null;
     }
 
+    /// <summary>
+    /// Xử lý thông điệp CommandDone
+    /// </summary>
     private NetOpsMessage? HandleCommandDone(AgentSession session, NetOpsMessage message)
     {
         if (message.TryGetPayload<CommandDonePayload>(out var done) && done != null)
@@ -274,12 +320,16 @@ public class MasterMessageControl : IMasterMessageControl
         return null;
     }
 
+    /// <summary>
+    /// Xử lý thông điệp Unsupported
+    /// </summary>
     private NetOpsMessage HandleUnsupported(AgentSession session, NetOpsMessage message)
     {
+        /// Ghi log Warning
         _logger.LogWarning(
             "[MasterMessageControl] Unhandled message type '{Type}' from session {SessionId} (Endpoint: {EndPoint})",
             message.MessageType, session.SessionId, session.RemoteEndPoint);
-
+        /// Tạo gói tin phản hồi Error
         return message.CreateError(
             errorCode: "UNSUPPORTED_MESSAGE_TYPE",
             message: $"MessageType '{message.MessageType}' is not supported",

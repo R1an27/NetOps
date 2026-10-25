@@ -50,9 +50,27 @@ public static class MasterApiEndpoints
         .WithName("GetServerHealth")
         .WithSummary("Kiểm tra trạng thái sức khỏe và số lượng kết nối đang hoạt động của Master Server");
 
-        // 2. Endpoint lấy danh sách toàn bộ các Agent đang kết nối trực tuyến
-        app.MapGet("/api/agents", (IConnectionManager connectionManager) =>
+        // 2. Endpoint lấy danh sách các Agent (hỗ trợ lọc ?status=online|offline|all)
+        app.MapGet("/api/agents", (IConnectionManager connectionManager, string? status) =>
         {
+            // Nếu có tham số status (online, offline, all): Trả về danh sách chi tiết từ AgentRegistry
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                AgentStatus? filter = status.ToLowerInvariant() switch
+                {
+                    "online" => AgentStatus.Online,
+                    "offline" => AgentStatus.Offline,
+                    _ => null
+                };
+
+                var records = connectionManager.GetAllAgentStatuses(filter);
+                return Results.Ok(records);
+            }
+
+            // Mặc định: Trả về danh sách các phiên đang kết nối, tương thích ngược 100% với các test hiện có
+            // Khi bạn nâng cấp hoặc thêm tính năng mới vào hệ thống, 
+            // những code cũ, client cũ hoặc các Unit Test / Integration Test 
+            // đã viết từ trước vẫn tiếp tục chạy đúng mà không bị lỗi
             var agents = connectionManager.GetAllSessions().Select(s => new
             {
                 s.SessionId,
@@ -61,15 +79,30 @@ public static class MasterApiEndpoints
                 s.ConnectedAt,
                 s.LastSeenAt,
                 s.IsAuthenticated,
+                Status = AgentStatus.Online.ToString(),
                 IdleSeconds = Math.Round((DateTimeOffset.UtcNow - s.LastSeenAt).TotalSeconds, 1)
             });
 
             return Results.Ok(agents);
         })
         .WithName("GetConnectedAgents")
-        .WithSummary("Lấy danh sách các Agent đang kết nối trực tuyến tới Master Server");
+        .WithSummary("Lấy danh sách các Agent (mặc định Online hoặc lọc theo status: online, offline, all)");
 
-        // 3. Endpoint lấy chi tiết một phiên kết nối theo SessionId
+        // 3. Endpoint tra cứu trạng thái vòng đời của một Agent theo AgentId
+        app.MapGet("/api/agents/status/{agentId}", (string agentId, IConnectionManager connectionManager) =>
+        {
+            var record = connectionManager.GetAgentStatus(agentId);
+            if (record == null)
+            {
+                return Results.NotFound(new { Message = $"Agent '{agentId}' status not found in registry" });
+            }
+
+            return Results.Ok(record);
+        })
+        .WithName("GetAgentLifecycleStatus")
+        .WithSummary("Tra cứu trạng thái vòng đời kết nối chi tiết (Online/Offline/Reason) của Agent");
+
+        // 4. Endpoint lấy chi tiết một phiên kết nối theo SessionId
         app.MapGet("/api/agents/{sessionId}", (string sessionId, IConnectionManager connectionManager) =>
         {
             var session = connectionManager.GetSession(sessionId);
@@ -86,6 +119,7 @@ public static class MasterApiEndpoints
                 session.ConnectedAt,
                 session.LastSeenAt,
                 session.IsAuthenticated,
+                Status = AgentStatus.Online.ToString(),
                 IdleSeconds = Math.Round((DateTimeOffset.UtcNow - session.LastSeenAt).TotalSeconds, 1)
             });
         })

@@ -357,4 +357,63 @@ public class MasterApiEndpointsTests
             await app.DisposeAsync();
         }
     }
+
+    [Fact]
+    public async Task GetAgents_WithStatusFilter_And_GetAgentStatus_ReturnsCorrectRecords()
+    {
+        var (app, client, connectionManager) = await CreateTestApiAsync();
+        using var ms1 = new MemoryStream();
+        using var ms2 = new MemoryStream();
+        using var s1 = new SafeFrameStream(ms1);
+        using var s2 = new SafeFrameStream(ms2);
+
+        var session1 = new AgentSession("sess-live", s1, "127.0.0.1:4050", DateTimeOffset.UtcNow, agentId: "node-online");
+        var session2 = new AgentSession("sess-dead", s2, "127.0.0.1:4051", DateTimeOffset.UtcNow, agentId: "node-offline");
+
+        connectionManager.TryRegister(session1);
+        connectionManager.TryRegister(session2);
+
+        // Giả lập node-offline bị watchdog purge do timeout nhịp tim
+        connectionManager.TryUnregister("sess-dead", out _, DisconnectReason.HeartbeatTimeout);
+
+        try
+        {
+            // 1. GET /api/agents?status=offline
+            var offlineResp = await client.GetAsync("/api/agents?status=offline");
+            Assert.Equal(HttpStatusCode.OK, offlineResp.StatusCode);
+            var offlineList = await offlineResp.Content.ReadFromJsonAsync<List<JsonElement>>();
+            Assert.NotNull(offlineList);
+            Assert.Single(offlineList);
+            Assert.Equal("node-offline", offlineList[0].GetProperty("agentId").GetString());
+            Assert.Equal("Offline", offlineList[0].GetProperty("status").GetString());
+            Assert.Equal("HeartbeatTimeout", offlineList[0].GetProperty("disconnectReason").GetString());
+
+            // 2. GET /api/agents?status=online
+            var onlineResp = await client.GetAsync("/api/agents?status=online");
+            Assert.Equal(HttpStatusCode.OK, onlineResp.StatusCode);
+            var onlineList = await onlineResp.Content.ReadFromJsonAsync<List<JsonElement>>();
+            Assert.NotNull(onlineList);
+            Assert.Single(onlineList);
+            Assert.Equal("node-online", onlineList[0].GetProperty("agentId").GetString());
+            Assert.Equal("Online", onlineList[0].GetProperty("status").GetString());
+
+            // 3. GET /api/agents/status/{agentId}
+            var statusResp = await client.GetAsync("/api/agents/status/node-offline");
+            Assert.Equal(HttpStatusCode.OK, statusResp.StatusCode);
+            var statusDoc = await statusResp.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("node-offline", statusDoc.GetProperty("agentId").GetString());
+            Assert.Equal("Offline", statusDoc.GetProperty("status").GetString());
+            Assert.Equal("HeartbeatTimeout", statusDoc.GetProperty("disconnectReason").GetString());
+
+            // 4. GET /api/agents/status/{agentId} - Not Found
+            var notFoundResp = await client.GetAsync("/api/agents/status/unknown-agent");
+            Assert.Equal(HttpStatusCode.NotFound, notFoundResp.StatusCode);
+        }
+        finally
+        {
+            await app.StopAsync();
+            client.Dispose();
+            await app.DisposeAsync();
+        }
+    }
 }
