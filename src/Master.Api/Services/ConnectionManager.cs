@@ -11,8 +11,13 @@ namespace Master.Api.Services;
 public class ConnectionManager : IConnectionManager
 {
     private readonly ConcurrentDictionary<string, AgentSession> _sessions = new();
-    private readonly ConcurrentDictionary<string, AgentStatusRecord> _agentRegistry = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IAgentRegistry _agentRegistry;
     private readonly ILogger<ConnectionManager>? _logger;
+
+    /// <summary>
+    /// Đối tượng quản lý danh bạ và trạng thái sống còn IAgentRegistry (T16.1).
+    /// </summary>
+    public IAgentRegistry Registry => _agentRegistry;
 
     /// <summary>
     /// Số lượng phiên kết nối đang hoạt động.
@@ -40,11 +45,24 @@ public class ConnectionManager : IConnectionManager
     public event Action<AgentStatusRecord>? AgentOfflineDetected;
 
     /// <summary>
-    /// Khởi tạo ConnectionManager với bộ ghi log tùy chọn.
+    /// Khởi tạo ConnectionManager với IAgentRegistry và ILogger tùy chọn.
     /// </summary>
-    public ConnectionManager(ILogger<ConnectionManager>? logger = null)
+    public ConnectionManager(IAgentRegistry? agentRegistry = null, ILogger<ConnectionManager>? logger = null)
     {
+        _agentRegistry = agentRegistry ?? new AgentRegistry();
         _logger = logger;
+
+        // Chuyển tiếp các sự kiện từ AgentRegistry để tương thích hoàn toàn 100% với các subscriber cũ
+        _agentRegistry.AgentStatusChanged += record => AgentStatusChanged?.Invoke(record);
+        _agentRegistry.AgentOfflineDetected += record => AgentOfflineDetected?.Invoke(record);
+    }
+
+    /// <summary>
+    /// Overload khởi tạo ConnectionManager chỉ nhận ILogger (hỗ trợ tương thích ngược tuyệt đối).
+    /// </summary>
+    public ConnectionManager(ILogger<ConnectionManager>? logger)
+        : this(null, logger)
+    {
     }
 
     /// <summary>
@@ -138,49 +156,7 @@ public class ConnectionManager : IConnectionManager
     /// </summary>
     public void MarkAgentOnline(string agentId, string sessionId, string remoteEndPoint, DateTimeOffset? seenAt = null)
     {
-        if (string.IsNullOrWhiteSpace(agentId)) return;
-
-        var now = seenAt ?? DateTimeOffset.UtcNow;
-        bool statusChanged = false;
-
-        var record = _agentRegistry.AddOrUpdate(
-            agentId,
-            addValueFactory: id =>
-            {
-                statusChanged = true;
-                return new AgentStatusRecord(id, sessionId, remoteEndPoint, AgentStatus.Online, now, now);
-            },
-            updateValueFactory: (id, existing) =>
-            {
-                if (existing.Status != AgentStatus.Online)
-                {
-                    statusChanged = true;
-                }
-
-                existing.Status = AgentStatus.Online;
-                existing.CurrentSessionId = sessionId;
-                existing.RemoteEndPoint = remoteEndPoint;
-                existing.LastSeenAt = now;
-                existing.DisconnectedAt = null;
-                existing.DisconnectReason = DisconnectReason.None;
-                return existing;
-            });
-
-        _logger?.LogInformation(
-            "[ConnectionManager] Agent '{AgentId}' is marked ONLINE (Session: {SessionId}, EndPoint: {EndPoint})",
-            agentId, sessionId, remoteEndPoint);
-
-        if (statusChanged)
-        {
-            try
-            {
-                AgentStatusChanged?.Invoke(record);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "[ConnectionManager] Error invoking AgentStatusChanged for {AgentId}", agentId);
-            }
-        }
+        _agentRegistry.RegisterOrUpdateOnline(agentId, sessionId, remoteEndPoint, seenAt);
     }
 
     /// <summary>
@@ -189,60 +165,7 @@ public class ConnectionManager : IConnectionManager
     /// </summary>
     public void MarkAgentOffline(string agentId, DisconnectReason reason, DateTimeOffset? disconnectedAt = null)
     {
-        if (string.IsNullOrWhiteSpace(agentId)) return;
-
-        var timestamp = disconnectedAt ?? DateTimeOffset.UtcNow;
-        bool statusChanged = false;
-
-        var record = _agentRegistry.AddOrUpdate(
-            agentId,
-            addValueFactory: id =>
-            {
-                statusChanged = true;
-                return new AgentStatusRecord(id, null, "Unknown", AgentStatus.Offline, timestamp, timestamp)
-                {
-                    DisconnectedAt = timestamp,
-                    DisconnectReason = reason
-                };
-            },
-            updateValueFactory: (id, existing) =>
-            {
-                if (existing.Status != AgentStatus.Offline)
-                {
-                    statusChanged = true;
-                }
-
-                existing.Status = AgentStatus.Offline;
-                existing.CurrentSessionId = null;
-                existing.DisconnectedAt = timestamp;
-                existing.DisconnectReason = reason;
-                return existing;
-            });
-
-        _logger?.LogWarning(
-            "[ConnectionManager] Agent '{AgentId}' is marked OFFLINE (Reason: {Reason}, DisconnectedAt: {DisconnectedAt:u})",
-            agentId, reason, timestamp);
-
-        if (statusChanged)
-        {
-            try
-            {
-                AgentStatusChanged?.Invoke(record);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "[ConnectionManager] Error invoking AgentStatusChanged for {AgentId}", agentId);
-            }
-
-            try
-            {
-                AgentOfflineDetected?.Invoke(record);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "[ConnectionManager] Error invoking AgentOfflineDetected for {AgentId}", agentId);
-            }
-        }
+        _agentRegistry.MarkOffline(agentId, reason, disconnectedAt);
     }
 
     /// <summary>
@@ -250,11 +173,9 @@ public class ConnectionManager : IConnectionManager
     /// </summary>
     public IReadOnlyCollection<AgentStatusRecord> GetAllAgentStatuses(AgentStatus? statusFilter = null)
     {
-        var all = _agentRegistry.Values.ToArray();
-        return statusFilter.HasValue
-            ? all.Where(a => a.Status == statusFilter.Value).ToArray() 
-            // nếu có bộ lọc thì trả về status phù hợp
-            : all; //nếu k có bộ lọc thì trả về tất cả status
+        // nếu có bộ lọc thì trả về status phù hợp
+        // nếu k có bộ lọc thì trả về tất cả status
+        return _agentRegistry.GetAll(statusFilter);
     }
 
     /// <summary>
@@ -262,9 +183,7 @@ public class ConnectionManager : IConnectionManager
     /// </summary>
     public AgentStatusRecord? GetAgentStatus(string agentId)
     {
-        if (string.IsNullOrWhiteSpace(agentId)) return null;
-        _agentRegistry.TryGetValue(agentId, out var record);
-        return record;
+        return _agentRegistry.Get(agentId);
     }
 
     /// <summary>
