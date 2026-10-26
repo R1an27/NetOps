@@ -1,27 +1,9 @@
-namespace Client.WinForms.Services;
+// =========================================================================================
+// Giai đoạn T18.1: Chuẩn hóa kiến trúc hợp đồng kết nối (Architecture Contract Refactoring)
+// Hợp đồng chính thức hiện tại được định nghĩa tập trung tại:
+//   src/Shared.Contracts/Models/ConnectionState.cs (ServerManager.Shared.Contracts.Models)
+// File này cung cấp global using để giữ trọn vẹn 100% tương thích ngược trong Client.WinForms.
+// =========================================================================================
 
-/// <summary>
-/// Trạng thái kết nối TCP của Client tới Master.
-/// </summary>
-public enum ConnectionState
-{
-    /// <summary>
-    /// Chưa kết nối hoặc đã ngắt kết nối.
-    /// </summary>
-    Disconnected,
-
-    /// <summary>
-    /// Đang trong quá trình thiết lập kết nối TCP socket.
-    /// </summary>
-    Connecting,
-
-    /// <summary>
-    /// Đã kết nối thành công và kênh truyền SafeFrameStream sẵn sàng.
-    /// </summary>
-    Connected,
-
-    /// <summary>
-    /// Đang thử kết nối lại sau sự cố mất mạng.
-    /// </summary>
-    Reconnecting
-}
+global using ConnectionState = ServerManager.Shared.Contracts.Models.ConnectionState;
+global using ConnectionStateChangedEventArgs = ServerManager.Shared.Contracts.Models.ConnectionStateChangedEventArgs;

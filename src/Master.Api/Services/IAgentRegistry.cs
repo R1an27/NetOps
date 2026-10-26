@@ -53,6 +53,23 @@ public interface IAgentRegistry
     AgentStatusRecord? MarkOffline(string agentId, DisconnectReason reason, DateTimeOffset? disconnectedAt = null);
 
     /// <summary>
+    /// Giai đoạn T18.2: Đánh dấu một Agent chuyển sang trạng thái Reconnecting khi nhận tín hiệu hoặc bắt đầu chu kỳ thử lại.
+    /// </summary>
+    /// <param name="agentId">Mã định danh của Agent</param>
+    /// <param name="reason">Nguyên nhân ngắt kết nối (mặc định NetworkFault)</param>
+    /// <returns>Bản ghi trạng thái sau khi đã chuyển sang Reconnecting (hoặc null nếu không hợp lệ)</returns>
+    AgentStatusRecord? MarkReconnecting(string agentId, DisconnectReason reason = DisconnectReason.NetworkFault);
+
+    /// <summary>
+    /// Giai đoạn T18.2: Đánh dấu một Agent chuyển sang trạng thái Connecting khi bắt đầu thiết lập phiên.
+    /// </summary>
+    /// <param name="agentId">Mã định danh của Agent</param>
+    /// <param name="sessionId">Mã phiên socket tạm thời (nếu có)</param>
+    /// <param name="remoteEndPoint">Địa chỉ IP và cổng mạng đầu xa</param>
+    /// <returns>Bản ghi trạng thái sau khi đã chuyển sang Connecting</returns>
+    AgentStatusRecord? MarkConnecting(string agentId, string? sessionId = null, string? remoteEndPoint = null);
+
+    /// <summary>
     /// Tra cứu thông tin trạng thái của một Agent theo AgentId.
     /// </summary>
     /// <param name="agentId">Mã định danh của Agent</param>

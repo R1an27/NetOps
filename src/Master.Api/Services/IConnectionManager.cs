@@ -80,6 +80,13 @@ public interface IConnectionManager
     void MarkAgentOffline(string agentId, DisconnectReason reason, DateTimeOffset? disconnectedAt = null);
 
     /// <summary>
+    /// Giai đoạn T18.2: Đánh dấu Agent chuyển sang trạng thái Reconnecting khi nhận tín hiệu hoặc bắt đầu chu kỳ thử lại.
+    /// </summary>
+    /// <param name="agentId">Mã định danh Agent</param>
+    /// <param name="reason">Nguyên nhân ngắt kết nối (mặc định NetworkFault)</param>
+    void MarkAgentReconnecting(string agentId, DisconnectReason reason = DisconnectReason.NetworkFault);
+
+    /// <summary>
     /// Lấy danh sách toàn bộ các bản ghi trạng thái của tất cả Agent đã biết (kể cả Online lẫn Offline).
     /// </summary>
     /// <param name="statusFilter">Bộ lọc trạng thái tùy chọn (null: lấy toàn bộ)</param>
