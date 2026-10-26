@@ -14,6 +14,11 @@ public interface IConnectionManager
     int ActiveCount { get; }
 
     /// <summary>
+    /// Đối tượng quản lý danh bạ và trạng thái sống còn IAgentRegistry (T16.1).
+    /// </summary>
+    IAgentRegistry Registry { get; }
+
+    /// <summary>
     /// Sự kiện kích hoạt khi có một session mới được đăng ký thành công.
     /// </summary>
     event Action<AgentSession>? SessionRegistered;

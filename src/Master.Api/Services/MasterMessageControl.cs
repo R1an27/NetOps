@@ -18,7 +18,14 @@ namespace Master.Api.Services;
 public class MasterMessageControl : IMasterMessageControl
 {
     private readonly IConnectionManager? _connectionManager;
+    // Đối tượng quản lý danh bạ Agent đa luồng theo chuẩn T16.1 & T16.2
+    private readonly IAgentRegistry? _agentRegistry;
     private readonly ILogger<MasterMessageControl> _logger;
+
+    /// <summary>
+    /// Truy xuất đối tượng IAgentRegistry quản lý trạng thái sống còn của Agent (T16.1 & T16.2).
+    /// </summary>
+    public IAgentRegistry? Registry => _agentRegistry;
 
     /// <summary>
     /// Sự kiện kích hoạt khi nhận được báo cáo tài nguyên phần cứng (Metrics) từ Agent.
@@ -36,22 +43,54 @@ public class MasterMessageControl : IMasterMessageControl
     public event Action<AgentSession, CommandDonePayload>? CommandDoneReceived;
 
     /// <summary>
+    /// Khởi tạo mặc định không tham số phục vụ kiểm thử và tương thích ngược.
+    /// </summary>
+    public MasterMessageControl()
+        : this((IAgentRegistry?)null, (IConnectionManager?)null, null)
+    {
+    }
+
+    /// <summary>
     /// Khởi tạo MasterMessageControl với IConnectionManager và ILogger tùy chọn.
+    /// Tự động liên kết IAgentRegistry từ connectionManager nếu có.
     /// </summary>
     public MasterMessageControl(
-        IConnectionManager? connectionManager = null,
+        IConnectionManager? connectionManager,
         ILogger<MasterMessageControl>? logger = null)
+        : this(connectionManager?.Registry, connectionManager, logger)
     {
-        _connectionManager = connectionManager;
-        _logger = logger ?? NullLogger<MasterMessageControl>.Instance;
     }
 
     /// <summary>
     /// Overload khởi tạo MasterMessageControl chỉ nhận ILogger (hỗ trợ kiểm thử đơn vị).
     /// </summary>
     public MasterMessageControl(ILogger<MasterMessageControl>? logger)
-        : this(null, logger)
+        : this((IAgentRegistry?)null, (IConnectionManager?)null, logger)
     {
+    }
+
+    /// <summary>
+    /// Khởi tạo MasterMessageControl nhận trực tiếp IAgentRegistry (chuẩn theo yêu cầu T16.2).
+    /// </summary>
+    public MasterMessageControl(
+        IAgentRegistry? agentRegistry,
+        ILogger<MasterMessageControl>? logger = null)
+        : this(agentRegistry, null, logger)
+    {
+    }
+
+    /// <summary>
+    /// Khởi tạo MasterMessageControl với đầy đủ IAgentRegistry, IConnectionManager và ILogger.
+    /// </summary>
+    public MasterMessageControl(
+        IAgentRegistry? agentRegistry,
+        IConnectionManager? connectionManager,
+        ILogger<MasterMessageControl>? logger = null)
+    {
+        // Gán registry từ tham số truyền vào hoặc lấy từ connectionManager hoặc khởi tạo mới mặc định
+        _agentRegistry = agentRegistry ?? connectionManager?.Registry ?? new AgentRegistry();
+        _connectionManager = connectionManager;
+        _logger = logger ?? NullLogger<MasterMessageControl>.Instance;
     }
 
     /// <summary>
@@ -66,9 +105,10 @@ public class MasterMessageControl : IMasterMessageControl
         // Cập nhật mốc thời gian nhận gói tin hợp lệ gần nhất của session
         session.LastSeenAt = DateTimeOffset.UtcNow;
 
-        // Nếu session đã có AgentId thì đồng bộ cập nhật vào AgentRegistry
+        // T16.2: Nếu session đã có AgentId thì đồng bộ cập nhật vào AgentRegistry và ConnectionManager
         if (!string.IsNullOrWhiteSpace(session.AgentId))
         {
+            _agentRegistry?.RegisterOrUpdateOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
             _connectionManager?.MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
         }
 
@@ -81,6 +121,7 @@ public class MasterMessageControl : IMasterMessageControl
             MessageType.Ping => HandlePing(session, message),
             MessageType.Heartbeat => HandleHeartbeat(session, message),
             MessageType.Auth => HandleAuth(session, message),
+            MessageType.AuthOk => HandleAuthOk(session, message),
             MessageType.Metrics => HandleMetrics(session, message),
             MessageType.Command => HandleCommand(session, message),
             MessageType.CommandOutput => HandleCommandOutput(session, message),
@@ -142,10 +183,16 @@ public class MasterMessageControl : IMasterMessageControl
             !string.IsNullOrWhiteSpace(heartbeat.AgentId))
         {
             session.AgentId = heartbeat.AgentId;
-            _connectionManager?.MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
             _logger.LogInformation(
                 "[MasterMessageControl] Identified Agent '{AgentId}' from PING payload on session {SessionId}",
                 session.AgentId, session.SessionId);
+        }
+
+        // T16.2: Cập nhật trạng thái Agent thành Online và cập nhật LastSeenAt trong AgentRegistry khi nhận bản tin PING
+        if (!string.IsNullOrEmpty(session.AgentId))
+        {
+            _agentRegistry?.RegisterOrUpdateOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
+            _connectionManager?.MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
         }
 
         _logger.LogInformation(
@@ -167,8 +214,10 @@ public class MasterMessageControl : IMasterMessageControl
                 session.AgentId = heartbeat.AgentId;
             }
 
+            // T16.2: Cập nhật trạng thái Agent thành Online và cập nhật LastSeenAt trong AgentRegistry khi nhận bản tin HEARTBEAT
             if (!string.IsNullOrEmpty(session.AgentId))
             {
+                _agentRegistry?.RegisterOrUpdateOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
                 _connectionManager?.MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
             }
 
@@ -197,6 +246,8 @@ public class MasterMessageControl : IMasterMessageControl
             if (!string.IsNullOrEmpty(auth.AgentId))
             {
                 session.AgentId = auth.AgentId;
+                // T16.2: Cập nhật trạng thái Agent thành Online và cập nhật LastSeenAt trong AgentRegistry khi nhận bản tin AUTH
+                _agentRegistry?.RegisterOrUpdateOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
                 _connectionManager?.MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
             }
 
@@ -220,6 +271,28 @@ public class MasterMessageControl : IMasterMessageControl
             message: "Missing or malformed authentication request payload");
 
         return message.CreateResponse(MessageType.AuthFailed, authFailedPayload);
+    }
+
+    /// <summary>
+    /// Xử lý thông điệp AuthOk khi nhận bản tin xác thực thành công (T16.2).
+    /// </summary>
+    private NetOpsMessage? HandleAuthOk(AgentSession session, NetOpsMessage message)
+    {
+        // Khi nhận bản tin AUTH_OK, đánh dấu phiên làm việc đã xác thực
+        session.IsAuthenticated = true;
+
+        // T16.2: Cập nhật trạng thái Agent thành Online và cập nhật LastSeenAt trong AgentRegistry khi nhận bản tin AUTH_OK
+        if (!string.IsNullOrEmpty(session.AgentId))
+        {
+            _agentRegistry?.RegisterOrUpdateOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
+            _connectionManager?.MarkAgentOnline(session.AgentId, session.SessionId, session.RemoteEndPoint, session.LastSeenAt);
+        }
+
+        _logger.LogInformation(
+            "[MasterMessageControl] Processed AUTH_OK for session {SessionId} (AgentId: '{AgentId}')",
+            session.SessionId, session.AgentId ?? "Unknown");
+
+        return null;
     }
 
     /// <summary>

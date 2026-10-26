@@ -44,16 +44,22 @@ public static class MasterServiceExtensions
             }
         });
 
-        // 2. Đăng ký bộ quản lý phiên kết nối AgentSession an toàn đa luồng (Singleton)
+        // 2. Đăng ký Agent Registry quản lý trạng thái sống còn của Agent tập trung đa luồng (T16.1)
+        services.AddSingleton<IAgentRegistry, AgentRegistry>();
+
+        // 3. Đăng ký bộ quản lý phiên kết nối AgentSession an toàn đa luồng (Singleton)
         services.AddSingleton<IConnectionManager, ConnectionManager>();
 
-        // 3. Đăng ký bộ điều phối và phân loại thông điệp chuẩn NetOps Protocol v0 (Singleton)
+        // 4. Đăng ký bộ điều phối và phân loại thông điệp chuẩn NetOps Protocol v0 (Singleton, T16.2)
         services.AddSingleton<IMasterMessageControl, MasterMessageControl>();
 
-        // 4. Đăng ký TCP Manager Server chạy nền tiếp nhận kết nối Socket từ các Agent
+        // 5. Đăng ký TCP Manager Server chạy nền tiếp nhận kết nối Socket từ các Agent
         services.AddHostedService<TcpManagerServer>();
 
-        // 5. Đăng ký Session Watchdog Service chạy nền giám sát và dọn dẹp Half-Open Socket định kỳ
+        // 6. Đăng ký Heartbeat Timeout Watchdog giám sát sống còn và phát hiện timeout im lặng >15s định kỳ 2-3s (T16.3)
+        services.AddHostedService<HeartbeatTimeoutWatchdog>();
+
+        // 7. Đăng ký Session Watchdog Service chạy nền giám sát và dọn dẹp Half-Open Socket định kỳ (tương thích ngược)
         services.AddHostedService<SessionWatchdogService>();
 
         return services;
