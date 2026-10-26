@@ -169,6 +169,14 @@ public class ConnectionManager : IConnectionManager
     }
 
     /// <summary>
+    /// Giai đoạn T18.2: Đánh dấu Agent sang trạng thái Reconnecting khi nhận tín hiệu hoặc bắt đầu chu kỳ thử lại.
+    /// </summary>
+    public void MarkAgentReconnecting(string agentId, DisconnectReason reason = DisconnectReason.NetworkFault)
+    {
+        _agentRegistry.MarkReconnecting(agentId, reason);
+    }
+
+    /// <summary>
     /// Lấy danh sách toàn bộ trạng thái Agent đã biết (hỗ trợ lọc theo trạng thái Online/Offline).
     /// </summary>
     public IReadOnlyCollection<AgentStatusRecord> GetAllAgentStatuses(AgentStatus? statusFilter = null)

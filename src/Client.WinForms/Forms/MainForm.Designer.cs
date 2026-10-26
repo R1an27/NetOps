@@ -41,6 +41,7 @@ partial class MainForm
         this.btnConnect = new System.Windows.Forms.Button();
         this.btnDisconnect = new System.Windows.Forms.Button();
         this.lblConnectionStatus = new System.Windows.Forms.Label();
+        this.chkAutoReconnect = new System.Windows.Forms.CheckBox();
 
         this.grpDiagnostics = new System.Windows.Forms.GroupBox();
         this.lblPingPrompt = new System.Windows.Forms.Label();
@@ -695,6 +696,7 @@ partial class MainForm
         // ==========================================
         // grpConnection
         // ==========================================
+        this.grpConnection.Controls.Add(this.chkAutoReconnect);
         this.grpConnection.Controls.Add(this.lblConnectionStatus);
         this.grpConnection.Controls.Add(this.btnDisconnect);
         this.grpConnection.Controls.Add(this.btnConnect);
@@ -744,7 +746,7 @@ partial class MainForm
         this.numPort.Name = "numPort";
         this.numPort.Size = new System.Drawing.Size(90, 24);
         this.numPort.TabIndex = 3;
-        this.numPort.Value = new decimal(new int[] { 5000, 0, 0, 0 });
+        this.numPort.Value = new decimal(new int[] { 5050, 0, 0, 0 });
 
         // btnConnect
         this.btnConnect.BackColor = System.Drawing.Color.FromArgb(16, 185, 129); // Emerald
@@ -782,6 +784,18 @@ partial class MainForm
         this.lblConnectionStatus.Size = new System.Drawing.Size(193, 15);
         this.lblConnectionStatus.TabIndex = 6;
         this.lblConnectionStatus.Text = "Trạng thái: Chưa kết nối máy chủ";
+
+        // chkAutoReconnect
+        this.chkAutoReconnect.AutoSize = true;
+        this.chkAutoReconnect.Checked = true;
+        this.chkAutoReconnect.CheckState = System.Windows.Forms.CheckState.Checked;
+        this.chkAutoReconnect.Font = new System.Drawing.Font("Segoe UI", 9F);
+        this.chkAutoReconnect.Location = new System.Drawing.Point(620, 28);
+        this.chkAutoReconnect.Name = "chkAutoReconnect";
+        this.chkAutoReconnect.Size = new System.Drawing.Size(280, 19);
+        this.chkAutoReconnect.TabIndex = 7;
+        this.chkAutoReconnect.Text = "Tự động kết nối lại khi mất mạng (Auto Reconnect)";
+        this.chkAutoReconnect.UseVisualStyleBackColor = true;
 
         // ==========================================
         // grpDiagnostics
@@ -1036,6 +1050,7 @@ partial class MainForm
     private System.Windows.Forms.Button btnConnect;
     private System.Windows.Forms.Button btnDisconnect;
     private System.Windows.Forms.Label lblConnectionStatus;
+    private System.Windows.Forms.CheckBox chkAutoReconnect;
 
     private System.Windows.Forms.GroupBox grpDiagnostics;
     private System.Windows.Forms.Label lblPingPrompt;

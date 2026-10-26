@@ -60,6 +60,8 @@ public static class MasterApiEndpoints
                 {
                     "online" => AgentStatus.Online,
                     "offline" => AgentStatus.Offline,
+                    "connecting" => AgentStatus.Connecting,
+                    "reconnecting" => AgentStatus.Reconnecting,
                     _ => null
                 };
 
@@ -127,6 +129,7 @@ public static class MasterApiEndpoints
         .WithSummary("Lấy thông tin chi tiết của một phiên kết nối theo SessionId");
 
         // 4. Endpoint gửi lệnh Shell Unicast tới một Agent cụ thể
+        // Shell Unicast là gửi lệnh tới 1 agent cụ thể 
         app.MapPost("/api/agents/{agentId}/command", async (
             string agentId,
             SendCommandRequest request,
@@ -177,6 +180,9 @@ public static class MasterApiEndpoints
         .WithSummary("Gửi lệnh Shell Unicast tới một Agent cụ thể đang kết nối");
 
         // 5. Endpoint gửi thông điệp NetOpsMessage Unicast tùy biến tới một Agent cụ thể
+        // NetOpsMessage Unicast là gửi thông điệp NetOpsMessage tới 1 agent cụ thể 
+        // Không phải gửi lệnh Shell mà là gửi thông điệp NetOpsMessage bất kỳ
+        // NetOpsMessage là một thông điệp NetOps Protocol v0
         app.MapPost("/api/agents/{agentId}/message", async (
             string agentId,
             NetOpsMessage message,

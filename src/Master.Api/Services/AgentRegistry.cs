@@ -177,6 +177,110 @@ public class AgentRegistry : IAgentRegistry
     }
 
     /// <summary>
+    /// Giai đoạn T18.2: Đánh dấu một Agent chuyển sang trạng thái Reconnecting khi nhận tín hiệu hoặc bắt đầu chu kỳ thử lại.
+    /// </summary>
+    public AgentStatusRecord? MarkReconnecting(string agentId, DisconnectReason reason = DisconnectReason.NetworkFault)
+    {
+        if (string.IsNullOrWhiteSpace(agentId)) return null;
+
+        bool statusChanged = false;
+        var now = DateTimeOffset.UtcNow;
+
+        var record = _agents.AddOrUpdate(
+            agentId,
+            addValueFactory: id =>
+            {
+                statusChanged = true;
+                return new AgentStatusRecord(id, null, "Unknown", AgentStatus.Reconnecting, now, now)
+                {
+                    DisconnectReason = reason
+                };
+            },
+            updateValueFactory: (id, existing) =>
+            {
+                if (existing.Status != AgentStatus.Reconnecting)
+                {
+                    statusChanged = true;
+                }
+
+                existing.Status = AgentStatus.Reconnecting;
+                existing.CurrentSessionId = null;
+                existing.DisconnectReason = reason;
+                return existing;
+            });
+
+        _logger.LogInformation(
+            "[AgentRegistry] Agent '{AgentId}' is RECONNECTING (Reason: {Reason})",
+            agentId, reason);
+
+        if (statusChanged)
+        {
+            try
+            {
+                AgentStatusChanged?.Invoke(record);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[AgentRegistry] Error invoking AgentStatusChanged for Agent '{AgentId}'", agentId);
+            }
+        }
+
+        return record;
+    }
+
+    /// <summary>
+    /// Giai đoạn T18.2: Đánh dấu một Agent chuyển sang trạng thái Connecting khi bắt đầu thiết lập phiên.
+    /// </summary>
+    public AgentStatusRecord? MarkConnecting(string agentId, string? sessionId = null, string? remoteEndPoint = null)
+    {
+        if (string.IsNullOrWhiteSpace(agentId)) return null;
+
+        bool statusChanged = false;
+        var now = DateTimeOffset.UtcNow;
+
+        var record = _agents.AddOrUpdate(
+            agentId,
+            addValueFactory: id =>
+            {
+                statusChanged = true;
+                return new AgentStatusRecord(id, sessionId, remoteEndPoint ?? "Unknown", AgentStatus.Connecting, now, now);
+            },
+            updateValueFactory: (id, existing) =>
+            {
+                if (existing.Status != AgentStatus.Connecting)
+                {
+                    statusChanged = true;
+                }
+
+                existing.Status = AgentStatus.Connecting;
+                existing.CurrentSessionId = sessionId;
+                if (!string.IsNullOrEmpty(remoteEndPoint))
+                {
+                    existing.RemoteEndPoint = remoteEndPoint;
+                }
+                return existing;
+            });
+
+        _logger.LogInformation(
+            "[AgentRegistry] Agent '{AgentId}' is CONNECTING (Session: {SessionId}, EndPoint: {EndPoint})",
+            agentId, sessionId ?? "N/A", remoteEndPoint ?? "Unknown");
+
+        if (statusChanged)
+        {
+            try
+            {
+                AgentStatusChanged?.Invoke(record);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[AgentRegistry] Error invoking AgentStatusChanged for Agent '{AgentId}'", agentId);
+            }
+        }
+
+        return record;
+    }
+
+    /// <summary>
     /// Tra cứu thông tin trạng thái của một Agent theo AgentId với độ phức tạp O(1).
     /// </summary>
     public AgentStatusRecord? Get(string agentId)

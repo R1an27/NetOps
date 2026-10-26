@@ -17,7 +17,10 @@ public partial class MainForm : Form
         InitializeComponent();
 
         _clientService = new NetOpsClientService();
-        _clientService.ConnectionStateChanged += OnConnectionStateChanged;
+        _clientService.AutoReconnectEnabled = chkAutoReconnect.Checked;
+        chkAutoReconnect.CheckedChanged += (_, _) => _clientService.AutoReconnectEnabled = chkAutoReconnect.Checked;
+
+        _clientService.DetailedConnectionStateChanged += OnDetailedConnectionStateChanged;
         _clientService.FrameLogged += OnFrameLogged;
         _clientService.MessageReceived += OnMessageReceived;
 
@@ -103,15 +106,29 @@ public partial class MainForm : Form
         }
     }
 
-    private void OnConnectionStateChanged(ConnectionState newState)
+    private void OnDetailedConnectionStateChanged(ConnectionStateChangedEventArgs e)
+    {
+        UpdateConnectionStateUi(e);
+    }
+
+    /// <summary>
+    /// Giai đoạn T18.3: Cập nhật giao diện người dùng tương ứng với 4 trạng thái kết nối
+    /// (Connected, Connecting, Reconnecting, Disconnected).
+    /// Đảm bảo nguyên tắc an toàn đa luồng (Thread-safe) tuyệt đối thông qua SafeInvoke (BeginInvoke).
+    /// </summary>
+    private void UpdateConnectionStateUi(ConnectionStateChangedEventArgs e)
     {
         SafeInvoke(() =>
         {
-            switch (newState)
+            switch (e.NewState)
             {
                 case ConnectionState.Connected:
-                    pnlStatusBadge.BackColor = Color.FromArgb(16, 185, 129); // Green
+                    // 1. Trạng thái Connected: Badge xanh lục Emerald (Đã kết nối)
+                    pnlStatusBadge.BackColor = Color.FromArgb(16, 185, 129);
                     lblStatusBadge.Text = "CONNECTED";
+                    lblStatusBadge.ForeColor = Color.White;
+
+                    // Phân quyền điều khiển: Khóa nút Connect, cho phép Disconnect, mở toàn quyền kiểm tra Ping/Heartbeat/Command
                     btnConnect.Enabled = false;
                     btnDisconnect.Enabled = true;
                     btnPing.Enabled = true;
@@ -120,25 +137,72 @@ public partial class MainForm : Form
                     btnExecuteCommand.Enabled = true;
                     txtHost.Enabled = false;
                     numPort.Enabled = false;
-                    lblConnectionStatus.Text = $"Đã kết nối thành công tới {_clientService.ConnectedEndpoint}";
+
+                    lblConnectionStatus.Text = string.IsNullOrEmpty(e.Message)
+                        ? $"Đã kết nối thành công tới {_clientService.ConnectedEndpoint}"
+                        : e.Message;
+                    lblConnectionStatus.ForeColor = Color.FromArgb(16, 185, 129);
                     statusLabel.Text = "Connected";
                     statusEndpoint.Text = $" | Endpoint: {_clientService.ConnectedEndpoint}";
                     break;
 
                 case ConnectionState.Connecting:
-                    pnlStatusBadge.BackColor = Color.FromArgb(245, 158, 11); // Amber
+                    // 2. Trạng thái Connecting: Badge vàng hổ phách Amber (Đang bắt tay kết nối)
+                    pnlStatusBadge.BackColor = Color.FromArgb(245, 158, 11);
                     lblStatusBadge.Text = "CONNECTING";
+                    lblStatusBadge.ForeColor = Color.White;
+
+                    // Khóa mọi nút bấm để tránh người dùng thao tác trùng lặp trong khi đang bắt tay mạng
                     btnConnect.Enabled = false;
                     btnDisconnect.Enabled = false;
+                    btnPing.Enabled = false;
+                    btnHeartbeat.Enabled = false;
+                    chkAutoHeartbeat.Enabled = false;
                     btnExecuteCommand.Enabled = false;
-                    lblConnectionStatus.Text = "Đang kết nối...";
+                    txtHost.Enabled = false;
+                    numPort.Enabled = false;
+
+                    lblConnectionStatus.Text = string.IsNullOrEmpty(e.Message)
+                        ? "Đang thiết lập kết nối TCP..."
+                        : e.Message;
+                    lblConnectionStatus.ForeColor = Color.FromArgb(217, 119, 6);
                     statusLabel.Text = "Connecting...";
+                    statusEndpoint.Text = $" | Endpoint: {_clientService.ConnectedEndpoint ?? "Connecting..."}";
+                    break;
+
+                case ConnectionState.Reconnecting:
+                    // 3. Trạng thái Reconnecting: Badge cam cảnh báo Deep Orange (Mất mạng, đang tự thử lại)
+                    pnlStatusBadge.BackColor = Color.FromArgb(234, 88, 12);
+                    lblStatusBadge.Text = e.Attempt > 0 ? $"RECONNECT ({e.Attempt})" : "RECONNECTING";
+                    lblStatusBadge.ForeColor = Color.White;
+
+                    // Khóa Connect, cho phép Disconnect để người dùng có thể chủ động hủy kết nối lại nếu muốn
+                    btnConnect.Enabled = false;
+                    btnDisconnect.Enabled = true;
+                    btnPing.Enabled = false;
+                    btnHeartbeat.Enabled = false;
+                    chkAutoHeartbeat.Enabled = false;
+                    btnExecuteCommand.Enabled = false;
+                    txtHost.Enabled = false;
+                    numPort.Enabled = false;
+
+                    string retryDelayText = e.RetryDelay.HasValue ? $" (Chờ {e.RetryDelay.Value.TotalSeconds:F0}s)" : "";
+                    lblConnectionStatus.Text = string.IsNullOrEmpty(e.Message)
+                        ? $"Mất kết nối mạng. Đang tự động kết nối lại{retryDelayText}..."
+                        : $"{e.Message}{retryDelayText}";
+                    lblConnectionStatus.ForeColor = Color.FromArgb(234, 88, 12);
+                    statusLabel.Text = e.Attempt > 0 ? $"Reconnecting (Attempt {e.Attempt})..." : "Reconnecting...";
+                    statusEndpoint.Text = $" | Target: {_clientService.ConnectedEndpoint ?? "Waiting..."}";
                     break;
 
                 case ConnectionState.Disconnected:
                 default:
-                    pnlStatusBadge.BackColor = Color.FromArgb(100, 116, 139); // Slate Gray
+                    // 4. Trạng thái Disconnected: Badge xám đá Slate Gray (Chưa kết nối / Đã ngắt)
+                    pnlStatusBadge.BackColor = Color.FromArgb(100, 116, 139);
                     lblStatusBadge.Text = "DISCONNECTED";
+                    lblStatusBadge.ForeColor = Color.White;
+
+                    // Mở lại các điều khiển Host, Port, nút Connect cho phép người dùng cấu hình lại
                     btnConnect.Enabled = true;
                     btnDisconnect.Enabled = false;
                     btnPing.Enabled = false;
@@ -149,7 +213,11 @@ public partial class MainForm : Form
                     _autoHeartbeatTimer.Stop();
                     txtHost.Enabled = true;
                     numPort.Enabled = true;
-                    lblConnectionStatus.Text = "Chưa kết nối máy chủ";
+
+                    lblConnectionStatus.Text = string.IsNullOrEmpty(e.Message)
+                        ? "Chưa kết nối máy chủ"
+                        : e.Message;
+                    lblConnectionStatus.ForeColor = Color.FromArgb(100, 116, 139);
                     statusLabel.Text = "Disconnected";
                     statusEndpoint.Text = " | Endpoint: Not connected";
                     break;

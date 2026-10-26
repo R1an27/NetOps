@@ -26,8 +26,14 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
     private readonly ConcurrentDictionary<string, TaskCompletionSource<NetOpsMessage>> _pendingRequests = new();
     private bool _disposed;
 
+    // Giai đoạn T18.2: Quản lý thông tin kết nối lại (Auto-Reconnect context)
+    private string? _lastHost;
+    private int _lastPort;
+    private bool _isUserDisconnecting;
+    private CancellationTokenSource? _reconnectCts;
+
     /// <summary>
-    /// Trạng thái kết nối hiện tại của dịch vụ.
+    /// Trạng thái kết nối hiện tại của dịch vụ (Disconnected, Connecting, Connected, Reconnecting).
     /// </summary>
     public ConnectionState State { get; private set; } = ConnectionState.Disconnected;
 
@@ -42,9 +48,35 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
     public string? ConnectedEndpoint { get; private set; }
 
     /// <summary>
-    /// Sự kiện thông báo khi trạng thái kết nối mạng thay đổi.
+    /// Sự kiện thông báo khi trạng thái kết nối mạng thay đổi (chuẩn đơn giản).
     /// </summary>
     public event Action<ConnectionState>? ConnectionStateChanged;
+
+    /// <summary>
+    /// Giai đoạn T18.2: Sự kiện thông báo chi tiết khi trạng thái kết nối thay đổi
+    /// (cung cấp PreviousState, NewState, Attempt, RetryDelay, Message cho WinForms UI).
+    /// </summary>
+    public event Action<ConnectionStateChangedEventArgs>? DetailedConnectionStateChanged;
+
+    /// <summary>
+    /// Bật/Tắt tính năng tự động kết nối lại khi bị ngắt kết nối mạng bất ngờ (T18.2).
+    /// Mặc định: false (để các unit test ngắt kết nối dứt khoát; giao diện UI có thể kích hoạt).
+    /// </summary>
+    public bool AutoReconnectEnabled { get; set; } = false;
+
+    /// <summary>
+    /// Số lần thử kết nối lại tối đa khi tự động reconnect (mặc định: 5).
+    /// </summary>
+    public int MaxReconnectAttempts { get; set; } = 5;
+
+    /// <summary>
+    /// Chủ động thông báo trạng thái Reconnecting (T18.2) kèm thông tin lần thử và độ trễ chờ.
+    /// Dùng cho kịch bản điều phối kết nối lại từ ngoài hoặc kiểm thử.
+    /// </summary>
+    public void NotifyReconnecting(int attempt = 1, TimeSpan? retryDelay = null, string? message = null)
+    {
+        SetState(ConnectionState.Reconnecting, message ?? "Đang thử kết nối lại...", attempt, retryDelay);
+    }
 
     /// <summary>
     /// Sự kiện thông báo khi có một khung dữ liệu được gửi đi hoặc nhận về (phục vụ Frame Inspector).
@@ -78,7 +110,12 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
             return;
         }
 
-        SetState(ConnectionState.Connecting);
+        // Ghi nhận bối cảnh kết nối phục vụ tự động thử lại
+        _isUserDisconnecting = false;
+        _lastHost = host;
+        _lastPort = port;
+
+        SetState(ConnectionState.Connecting, $"Đang kết nối tới {host}:{port}...");
         ConnectedEndpoint = $"{host}:{port}";
 
         try
@@ -93,10 +130,10 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
             var safeStream = new SafeFrameStream(tcpClient.GetStream());
             await AttachChannelInternalAsync(safeStream, ConnectedEndpoint).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
             await CleanupResourcesAsync().ConfigureAwait(false);
-            SetState(ConnectionState.Disconnected);
+            SetState(ConnectionState.Disconnected, $"Kết nối thất bại: {ex.Message}");
             throw;
         }
     }
@@ -120,7 +157,7 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
         ConnectedEndpoint = endpoint;
         _readCts = new CancellationTokenSource();
 
-        SetState(ConnectionState.Connected);
+        SetState(ConnectionState.Connected, $"Đã kết nối thành công tới {endpoint}");
 
         // Khởi động luồng đọc nền bất đồng bộ
         _readTask = Task.Run(() => BackgroundReadLoopAsync(_channel, _readCts.Token));
@@ -129,6 +166,7 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
 
     /// <summary>
     /// Ngắt kết nối sạch sẽ khỏi máy chủ, hủy các yêu cầu đang chờ và giải phóng socket.
+    /// Hủy bỏ toàn bộ chu kỳ Reconnect tự động nếu đang diễn ra.
     /// </summary>
     public async Task DisconnectAsync()
     {
@@ -137,6 +175,9 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
             return;
         }
 
+        // Đánh dấu người dùng chủ động ngắt, không kích hoạt tự động kết nối lại
+        _isUserDisconnecting = true;
+        _reconnectCts?.Cancel();
         _readCts?.Cancel();
 
         var readTask = _readTask;
@@ -154,7 +195,7 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
         }
 
         await CleanupResourcesAsync().ConfigureAwait(false);
-        SetState(ConnectionState.Disconnected);
+        SetState(ConnectionState.Disconnected, "Người dùng chủ động ngắt kết nối.");
     }
 
     /// <summary>
@@ -344,7 +385,16 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
                 {
                     // Bỏ qua lỗi dọn dẹp khi loop kết thúc
                 }
-                SetState(ConnectionState.Disconnected);
+
+                // Giai đoạn T18.2: Nếu bật AutoReconnect và không phải do người dùng ngắt kết nối thì tự động thử lại
+                if (AutoReconnectEnabled && !_isUserDisconnecting && !string.IsNullOrEmpty(_lastHost) && _lastPort > 0)
+                {
+                    _ = Task.Run(StartAutoReconnectLoopAsync);
+                }
+                else
+                {
+                    SetState(ConnectionState.Disconnected, "Kênh truyền mạng đã bị đóng.");
+                }
             }
         }
     }
@@ -382,12 +432,100 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
         }
     }
 
-    private void SetState(ConnectionState newState)
+    /// <summary>
+    /// Giai đoạn T18.2: Thiết lập trạng thái kết nối mới và bắn đồng thời hai sự kiện:
+    /// - ConnectionStateChanged (chuẩn enum đơn giản).
+    /// - DetailedConnectionStateChanged (cung cấp đầy đủ bối cảnh, lần thử, độ trễ và lý do cho WinForms UI).
+    /// </summary>
+    private void SetState(
+        ConnectionState newState,
+        string? message = null,
+        int attempt = 0,
+        TimeSpan? retryDelay = null)
     {
-        if (State != newState)
+        ConnectionState previousState = State;
+        if (previousState != newState || (newState == ConnectionState.Reconnecting && attempt > 0))
         {
             State = newState;
+            var args = new ConnectionStateChangedEventArgs(
+                previousState,
+                newState,
+                ConnectedEndpoint,
+                attempt,
+                retryDelay,
+                message);
+
             ConnectionStateChanged?.Invoke(newState);
+            DetailedConnectionStateChanged?.Invoke(args);
+        }
+    }
+
+    /// <summary>
+    /// Giai đoạn T18.2: Vòng lặp tự động kết nối lại chạy ngầm với thuật toán Exponential Backoff và gửi trạng thái lên WinForms UI.
+    /// </summary>
+    private async Task StartAutoReconnectLoopAsync()
+    {
+        _reconnectCts?.Cancel();
+        _reconnectCts = new CancellationTokenSource();
+        var token = _reconnectCts.Token;
+
+        int attempt = 0;
+        int delaySeconds = 2;
+        const int maxDelaySeconds = 30;
+
+        while (!token.IsCancellationRequested && (MaxReconnectAttempts <= 0 || attempt < MaxReconnectAttempts))
+        {
+            attempt++;
+            var retryDelay = TimeSpan.FromSeconds(delaySeconds);
+
+            SetState(
+                ConnectionState.Reconnecting,
+                $"Mất kết nối máy chủ. Đang tự động kết nối lại lần {attempt}...",
+                attempt,
+                retryDelay);
+
+            try
+            {
+                await Task.Delay(retryDelay, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            if (token.IsCancellationRequested || _isUserDisconnecting)
+            {
+                break;
+            }
+
+            try
+            {
+                SetState(ConnectionState.Connecting, $"Đang thử kết nối lại tới {_lastHost}:{_lastPort}...", attempt);
+
+                var tcpClient = new TcpClient();
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+
+                await tcpClient.ConnectAsync(_lastHost!, _lastPort, timeoutCts.Token).ConfigureAwait(false);
+
+                _tcpClient = tcpClient;
+                var safeStream = new SafeFrameStream(tcpClient.GetStream());
+                await AttachChannelInternalAsync(safeStream, $"{_lastHost}:{_lastPort}").ConfigureAwait(false);
+                return; // Reconnect thành công!
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+                delaySeconds = Math.Min(delaySeconds * 2, maxDelaySeconds);
+            }
+        }
+
+        if (!_isUserDisconnecting && State != ConnectionState.Connected)
+        {
+            SetState(ConnectionState.Disconnected, "Đã vượt quá số lần thử kết nối lại tự động.");
         }
     }
 
