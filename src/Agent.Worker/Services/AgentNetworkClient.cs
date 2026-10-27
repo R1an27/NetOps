@@ -10,7 +10,7 @@ namespace Agent.Worker.Services;
 /// <summary>
 /// Client quản trị kết nối TCP từ Agent tới Master, thực thi chu trình PING/PONG định kỳ
 /// và điều phối thông điệp hai chiều theo chuẩn NetOps Protocol v0.
-/// Tự động tuần tự hóa ghi (Write Serialization) qua SafeFrameStream, xử lý Exponential Backoff,
+/// Tự động tuần tự hóa ghi (Write Serialization) qua SafeFrameStream, xử lý Exponential Backoff kèm Jitter,
 /// và bọc bắt lỗi mạng an toàn khi gửi/nhận thông điệp.
 /// </summary>
 public class AgentNetworkClient : IAgentNetworkClient
@@ -23,10 +23,31 @@ public class AgentNetworkClient : IAgentNetworkClient
     // Mốc thời gian (TickCount64, mili giây) của lần cuối Agent nghe thấy Master (nhận PONG hoặc vừa kết nối xong).
     private long _lastPongTickMs = Environment.TickCount64;
 
+    // Trạng thái kết nối hiện tại, lưu dưới dạng int để đọc/ghi nguyên tử giữa các luồng.
+    private int _state = (int)AgentConnectionState.Disconnected;
+
     /// <summary>
     /// Cho biết Agent có đang duy trì kết nối mạng ổn định tới Master hay không.
     /// </summary>
     public bool IsConnected => _activeChannel?.IsConnected ?? false;
+
+    /// <summary>
+    /// Trạng thái kết nối hiện tại của Agent (Disconnected, Connecting, Authenticating, Connected, Reconnecting, Unauthorized).
+    /// </summary>
+    public AgentConnectionState CurrentState => (AgentConnectionState)Volatile.Read(ref _state);
+
+    /// <summary>
+    /// Sự kiện kích hoạt mỗi khi trạng thái kết nối thay đổi. Tham số: (trạng thái trước, trạng thái mới).
+    /// Lưu ý: sự kiện được gọi trên luồng đang xử lý kết nối (không phải luồng giao diện),
+    /// nên bên đăng ký cập nhật WinForms phải chuyển luồng bằng Control.BeginInvoke.
+    /// </summary>
+    public event Action<AgentConnectionState, AgentConnectionState>? StateChanged;
+
+    /// <summary>
+    /// Bộ tính độ trễ kết nối lại (Exponential Backoff kèm Jitter). Mặc định: cơ sở 2s, tối đa 30s, jitter 50%.
+    /// Có thể thay thế trước khi gọi RunAsync (ví dụ test dùng độ trễ ngắn).
+    /// </summary>
+    public ReconnectBackoff Backoff { get; set; } = new();
 
     /// <summary>
     /// Địa chỉ endpoint của Master mà Agent đang kết nối tới (dạng Host:Port), hoặc null nếu chưa kết nối.
@@ -78,14 +99,34 @@ public class AgentNetworkClient : IAgentNetworkClient
     }
 
     /// <summary>
+    /// Đổi trạng thái kết nối. Chỉ ghi log và phát sự kiện StateChanged khi trạng thái thật sự thay đổi.
+    /// </summary>
+    private void SetState(AgentConnectionState next)
+    {
+        var previous = (AgentConnectionState)Interlocked.Exchange(ref _state, (int)next);
+        if (previous == next)
+        {
+            return;
+        }
+
+        _logger.LogInformation("[AgentNetworkClient] State changed: {Previous} -> {Next}", previous, next);
+
+        try
+        {
+            StateChanged?.Invoke(previous, next);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[AgentNetworkClient] Error invoking StateChanged event ({Previous} -> {Next})", previous, next);
+        }
+    }
+
+    /// <summary>
     /// Bắt đầu chu trình kết nối TCP, vòng lặp nhận thông điệp và gửi PING định kỳ tới Master.
-    /// Tự động thực thi cơ chế Exponential Backoff khi gặp sự cố mạng cho tới khi cancellationToken được kích hoạt.
+    /// Tự động thực thi cơ chế Exponential Backoff kèm Jitter khi gặp sự cố mạng cho tới khi cancellationToken được kích hoạt.
     /// </summary>
     public async Task RunAsync(string host, int port, string agentId, TimeSpan pingInterval, CancellationToken cancellationToken)
     {
-        int reconnectDelaySeconds = 3;
-        const int maxReconnectDelaySeconds = 30;
-
         Action<NetOpsMessage, string?> onPong = (msg, payload) =>
         {
             // Ghi nhận thời điểm nhận PONG gần nhất để phát hiện kết nối chết ngầm
@@ -103,14 +144,16 @@ public class AgentNetworkClient : IAgentNetworkClient
             {
                 try
                 {
+                    SetState(AgentConnectionState.Connecting);
+
                     _logger.LogInformation("[Agent {AgentId}] Attempting to connect to Master at {Host}:{Port}...",
                         agentId, host, port);
 
                     using var client = new TcpClient();
                     await client.ConnectAsync(host, port, cancellationToken).ConfigureAwait(false);
 
-                    // Khi kết nối thành công, đặt lại độ trễ backoff về mức cơ sở 3s
-                    reconnectDelaySeconds = 3;
+                    // Khi kết nối thành công, đặt lại độ trễ backoff về mức cơ sở
+                    Backoff.Reset();
                     ConnectedEndpoint = $"{host}:{port}";
 
                     // Mốc "vừa nghe thấy Master": tính từ lúc kết nối thành công
@@ -126,6 +169,8 @@ public class AgentNetworkClient : IAgentNetworkClient
                         {
                             _activeChannel = safeStream;
                         }
+
+                        SetState(AgentConnectionState.Connected);
 
                         try
                         {
@@ -212,13 +257,13 @@ public class AgentNetworkClient : IAgentNetworkClient
                 }
                 catch (SocketException ex)
                 {
-                    _logger.LogWarning("[Agent {AgentId}] Socket error connecting to Master: {Message}. Reconnecting in {Seconds}s...",
-                        agentId, ex.Message, reconnectDelaySeconds);
+                    _logger.LogWarning("[Agent {AgentId}] Socket error connecting to Master: {Message}. Will reconnect with exponential backoff...",
+                        agentId, ex.Message);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "[Agent {AgentId}] Unexpected error. Reconnecting in {Seconds}s...",
-                        agentId, reconnectDelaySeconds);
+                    _logger.LogError(ex, "[Agent {AgentId}] Unexpected error. Will reconnect with exponential backoff...",
+                        agentId);
                 }
                 finally
                 {
@@ -238,13 +283,18 @@ public class AgentNetworkClient : IAgentNetworkClient
                     }
                 }
 
-                // Chờ theo cơ chế Exponential Backoff trước khi kết nối lại
+                // Chờ theo cơ chế Exponential Backoff kèm Jitter trước khi kết nối lại
                 if (!cancellationToken.IsCancellationRequested)
                 {
+                    SetState(AgentConnectionState.Reconnecting);
+
+                    var delay = Backoff.NextDelay();
+                    _logger.LogInformation("[Agent {AgentId}] Reconnecting in {Seconds:F1}s (attempt {Attempt})...",
+                        agentId, delay.TotalSeconds, Backoff.Attempt);
+
                     try
                     {
-                        await Task.Delay(TimeSpan.FromSeconds(reconnectDelaySeconds), cancellationToken).ConfigureAwait(false);
-                        reconnectDelaySeconds = Math.Min(reconnectDelaySeconds * 2, maxReconnectDelaySeconds);
+                        await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
@@ -256,6 +306,7 @@ public class AgentNetworkClient : IAgentNetworkClient
         finally
         {
             _messageControl.PongReceived -= onPong;
+            SetState(AgentConnectionState.Disconnected);
         }
     }
 
