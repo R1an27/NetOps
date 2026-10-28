@@ -31,6 +31,7 @@ partial class MainForm
         this.tabDashboard = new System.Windows.Forms.TabPage();
         this.tabCommands = new System.Windows.Forms.TabPage();
         this.tabInspector = new System.Windows.Forms.TabPage();
+        this.tabResilience = new System.Windows.Forms.TabPage();
 
         // Dashboard Tab Controls
         this.grpConnection = new System.Windows.Forms.GroupBox();
@@ -40,6 +41,7 @@ partial class MainForm
         this.numPort = new System.Windows.Forms.NumericUpDown();
         this.btnConnect = new System.Windows.Forms.Button();
         this.btnDisconnect = new System.Windows.Forms.Button();
+        this.btnSimulateDrop = new System.Windows.Forms.Button();
         this.lblConnectionStatus = new System.Windows.Forms.Label();
         this.chkAutoReconnect = new System.Windows.Forms.CheckBox();
 
@@ -88,6 +90,23 @@ partial class MainForm
         this.pnlInspectorTop = new System.Windows.Forms.Panel();
         this.btnClearInspector = new System.Windows.Forms.Button();
         this.chkAutoSelectLatest = new System.Windows.Forms.CheckBox();
+
+        // Resilience Tab Controls (T19.3)
+        this.grpFailureScenarios = new System.Windows.Forms.GroupBox();
+        this.btnSimulateClientDrop = new System.Windows.Forms.Button();
+        this.btnSimulateSilence = new System.Windows.Forms.Button();
+        this.lblTargetAgentPrompt = new System.Windows.Forms.Label();
+        this.txtTargetAgentId = new System.Windows.Forms.TextBox();
+        this.btnSimulateRemoteAgentDrop = new System.Windows.Forms.Button();
+        this.btnSimulateFuzzing = new System.Windows.Forms.Button();
+        this.lblScenarioDesc = new System.Windows.Forms.Label();
+
+        this.grpResilienceLog = new System.Windows.Forms.GroupBox();
+        this.rtbResilienceLog = new System.Windows.Forms.RichTextBox();
+        this.pnlResilienceBottom = new System.Windows.Forms.Panel();
+        this.btnClearResilienceLog = new System.Windows.Forms.Button();
+        this.btnCopyResilienceLog = new System.Windows.Forms.Button();
+        this.lblResilienceStatus = new System.Windows.Forms.Label();
         this.lblInspectorCount = new System.Windows.Forms.Label();
         this.dgvFrames = new System.Windows.Forms.DataGridView();
         this.colDirection = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -194,6 +213,7 @@ partial class MainForm
         this.tabMain.Controls.Add(this.tabDashboard);
         this.tabMain.Controls.Add(this.tabCommands);
         this.tabMain.Controls.Add(this.tabInspector);
+        this.tabMain.Controls.Add(this.tabResilience);
         this.tabMain.Dock = System.Windows.Forms.DockStyle.Fill;
         this.tabMain.Font = new System.Drawing.Font("Segoe UI", 9.5F);
         this.tabMain.Location = new System.Drawing.Point(0, 75);
@@ -696,6 +716,7 @@ partial class MainForm
         // ==========================================
         // grpConnection
         // ==========================================
+        this.grpConnection.Controls.Add(this.btnSimulateDrop);
         this.grpConnection.Controls.Add(this.chkAutoReconnect);
         this.grpConnection.Controls.Add(this.lblConnectionStatus);
         this.grpConnection.Controls.Add(this.btnDisconnect);
@@ -754,9 +775,9 @@ partial class MainForm
         this.btnConnect.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
         this.btnConnect.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
         this.btnConnect.ForeColor = System.Drawing.Color.White;
-        this.btnConnect.Location = new System.Drawing.Point(340, 50);
+        this.btnConnect.Location = new System.Drawing.Point(325, 50);
         this.btnConnect.Name = "btnConnect";
-        this.btnConnect.Size = new System.Drawing.Size(120, 32);
+        this.btnConnect.Size = new System.Drawing.Size(95, 32);
         this.btnConnect.TabIndex = 4;
         this.btnConnect.Text = "Connect";
         this.btnConnect.UseVisualStyleBackColor = false;
@@ -768,21 +789,35 @@ partial class MainForm
         this.btnDisconnect.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
         this.btnDisconnect.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
         this.btnDisconnect.ForeColor = System.Drawing.Color.White;
-        this.btnDisconnect.Location = new System.Drawing.Point(475, 50);
+        this.btnDisconnect.Location = new System.Drawing.Point(430, 50);
         this.btnDisconnect.Name = "btnDisconnect";
-        this.btnDisconnect.Size = new System.Drawing.Size(120, 32);
+        this.btnDisconnect.Size = new System.Drawing.Size(95, 32);
         this.btnDisconnect.TabIndex = 5;
         this.btnDisconnect.Text = "Disconnect";
         this.btnDisconnect.UseVisualStyleBackColor = false;
+
+        // btnSimulateDrop (T19.3)
+        this.btnSimulateDrop.BackColor = System.Drawing.Color.FromArgb(245, 158, 11); // Amber
+        this.btnSimulateDrop.Cursor = System.Windows.Forms.Cursors.Hand;
+        this.btnSimulateDrop.Enabled = false;
+        this.btnSimulateDrop.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+        this.btnSimulateDrop.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
+        this.btnSimulateDrop.ForeColor = System.Drawing.Color.White;
+        this.btnSimulateDrop.Location = new System.Drawing.Point(535, 50);
+        this.btnSimulateDrop.Name = "btnSimulateDrop";
+        this.btnSimulateDrop.Size = new System.Drawing.Size(130, 32);
+        this.btnSimulateDrop.TabIndex = 6;
+        this.btnSimulateDrop.Text = "⚡ Drop Socket";
+        this.btnSimulateDrop.UseVisualStyleBackColor = false;
 
         // lblConnectionStatus
         this.lblConnectionStatus.AutoSize = true;
         this.lblConnectionStatus.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Italic);
         this.lblConnectionStatus.ForeColor = System.Drawing.Color.FromArgb(100, 116, 139);
-        this.lblConnectionStatus.Location = new System.Drawing.Point(620, 59);
+        this.lblConnectionStatus.Location = new System.Drawing.Point(680, 59);
         this.lblConnectionStatus.Name = "lblConnectionStatus";
         this.lblConnectionStatus.Size = new System.Drawing.Size(193, 15);
-        this.lblConnectionStatus.TabIndex = 6;
+        this.lblConnectionStatus.TabIndex = 7;
         this.lblConnectionStatus.Text = "Trạng thái: Chưa kết nối máy chủ";
 
         // chkAutoReconnect
@@ -790,11 +825,11 @@ partial class MainForm
         this.chkAutoReconnect.Checked = true;
         this.chkAutoReconnect.CheckState = System.Windows.Forms.CheckState.Checked;
         this.chkAutoReconnect.Font = new System.Drawing.Font("Segoe UI", 9F);
-        this.chkAutoReconnect.Location = new System.Drawing.Point(620, 28);
+        this.chkAutoReconnect.Location = new System.Drawing.Point(680, 28);
         this.chkAutoReconnect.Name = "chkAutoReconnect";
-        this.chkAutoReconnect.Size = new System.Drawing.Size(280, 19);
-        this.chkAutoReconnect.TabIndex = 7;
-        this.chkAutoReconnect.Text = "Tự động kết nối lại khi mất mạng (Auto Reconnect)";
+        this.chkAutoReconnect.Size = new System.Drawing.Size(250, 19);
+        this.chkAutoReconnect.TabIndex = 8;
+        this.chkAutoReconnect.Text = "Tự động kết nối lại (Auto Reconnect)";
         this.chkAutoReconnect.UseVisualStyleBackColor = true;
 
         // ==========================================
@@ -952,6 +987,186 @@ partial class MainForm
         this.lblStatsLastSeen.Text = "Hoạt động gần nhất: Chưa có";
 
         // ==========================================
+        // tabResilience (T19.3)
+        // ==========================================
+        this.tabResilience.BackColor = System.Drawing.Color.FromArgb(248, 250, 252);
+        this.tabResilience.Controls.Add(this.grpResilienceLog);
+        this.tabResilience.Controls.Add(this.grpFailureScenarios);
+        this.tabResilience.Location = new System.Drawing.Point(4, 26);
+        this.tabResilience.Name = "tabResilience";
+        this.tabResilience.Padding = new System.Windows.Forms.Padding(16);
+        this.tabResilience.Size = new System.Drawing.Size(976, 530);
+        this.tabResilience.TabIndex = 3;
+        this.tabResilience.Text = "  🧪 Failure & Resilience  ";
+
+        // grpFailureScenarios
+        this.grpFailureScenarios.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
+        this.grpFailureScenarios.Controls.Add(this.lblScenarioDesc);
+        this.grpFailureScenarios.Controls.Add(this.btnSimulateFuzzing);
+        this.grpFailureScenarios.Controls.Add(this.btnSimulateRemoteAgentDrop);
+        this.grpFailureScenarios.Controls.Add(this.txtTargetAgentId);
+        this.grpFailureScenarios.Controls.Add(this.lblTargetAgentPrompt);
+        this.grpFailureScenarios.Controls.Add(this.btnSimulateSilence);
+        this.grpFailureScenarios.Controls.Add(this.btnSimulateClientDrop);
+        this.grpFailureScenarios.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
+        this.grpFailureScenarios.Location = new System.Drawing.Point(16, 16);
+        this.grpFailureScenarios.Name = "grpFailureScenarios";
+        this.grpFailureScenarios.Size = new System.Drawing.Size(944, 155);
+        this.grpFailureScenarios.TabIndex = 0;
+        this.grpFailureScenarios.TabStop = false;
+        this.grpFailureScenarios.Text = "Bộ Kịch Bản Kiểm Thử Sự Cố & Khả Năng Tự Phục Hồi (Failure & Resilience Testing)";
+
+        // btnSimulateClientDrop
+        this.btnSimulateClientDrop.BackColor = System.Drawing.Color.FromArgb(245, 158, 11); // Amber
+        this.btnSimulateClientDrop.Cursor = System.Windows.Forms.Cursors.Hand;
+        this.btnSimulateClientDrop.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+        this.btnSimulateClientDrop.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
+        this.btnSimulateClientDrop.ForeColor = System.Drawing.Color.White;
+        this.btnSimulateClientDrop.Location = new System.Drawing.Point(20, 30);
+        this.btnSimulateClientDrop.Name = "btnSimulateClientDrop";
+        this.btnSimulateClientDrop.Size = new System.Drawing.Size(260, 34);
+        this.btnSimulateClientDrop.TabIndex = 0;
+        this.btnSimulateClientDrop.Text = "⚡ 1. Ngắt Socket Client Đột Ngột";
+        this.btnSimulateClientDrop.UseVisualStyleBackColor = false;
+
+        // btnSimulateSilence
+        this.btnSimulateSilence.BackColor = System.Drawing.Color.FromArgb(239, 68, 68); // Red
+        this.btnSimulateSilence.Cursor = System.Windows.Forms.Cursors.Hand;
+        this.btnSimulateSilence.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+        this.btnSimulateSilence.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
+        this.btnSimulateSilence.ForeColor = System.Drawing.Color.White;
+        this.btnSimulateSilence.Location = new System.Drawing.Point(295, 30);
+        this.btnSimulateSilence.Name = "btnSimulateSilence";
+        this.btnSimulateSilence.Size = new System.Drawing.Size(260, 34);
+        this.btnSimulateSilence.TabIndex = 1;
+        this.btnSimulateSilence.Text = "⏸ 2. Giả Lập Mất Nhịp Tim (Silent)";
+        this.btnSimulateSilence.UseVisualStyleBackColor = false;
+
+        // btnSimulateFuzzing
+        this.btnSimulateFuzzing.BackColor = System.Drawing.Color.FromArgb(139, 92, 246); // Purple
+        this.btnSimulateFuzzing.Cursor = System.Windows.Forms.Cursors.Hand;
+        this.btnSimulateFuzzing.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+        this.btnSimulateFuzzing.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
+        this.btnSimulateFuzzing.ForeColor = System.Drawing.Color.White;
+        this.btnSimulateFuzzing.Location = new System.Drawing.Point(570, 30);
+        this.btnSimulateFuzzing.Name = "btnSimulateFuzzing";
+        this.btnSimulateFuzzing.Size = new System.Drawing.Size(260, 34);
+        this.btnSimulateFuzzing.TabIndex = 2;
+        this.btnSimulateFuzzing.Text = "🛡 3. Thử Nghiệm Gói Tin 16MB DoS";
+        this.btnSimulateFuzzing.UseVisualStyleBackColor = false;
+
+        // lblTargetAgentPrompt
+        this.lblTargetAgentPrompt.AutoSize = true;
+        this.lblTargetAgentPrompt.Font = new System.Drawing.Font("Segoe UI", 9F);
+        this.lblTargetAgentPrompt.Location = new System.Drawing.Point(20, 80);
+        this.lblTargetAgentPrompt.Name = "lblTargetAgentPrompt";
+        this.lblTargetAgentPrompt.Size = new System.Drawing.Size(130, 15);
+        this.lblTargetAgentPrompt.TabIndex = 3;
+        this.lblTargetAgentPrompt.Text = "Agent ID cần ngắt từ xa:";
+
+        // txtTargetAgentId - Dời tọa độ X sang 210 để không bị đè lên nhãn chữ (Fix UI overlap)
+        this.txtTargetAgentId.Font = new System.Drawing.Font("Segoe UI", 9.5F);
+        this.txtTargetAgentId.Location = new System.Drawing.Point(210, 76);
+        this.txtTargetAgentId.Name = "txtTargetAgentId";
+        this.txtTargetAgentId.Size = new System.Drawing.Size(135, 24);
+        this.txtTargetAgentId.TabIndex = 4;
+        this.txtTargetAgentId.Text = "agent-linux-01";
+
+        // btnSimulateRemoteAgentDrop - Dời tọa độ X sang 360 để cách đều Textbox
+        this.btnSimulateRemoteAgentDrop.BackColor = System.Drawing.Color.FromArgb(79, 70, 229); // Indigo
+        this.btnSimulateRemoteAgentDrop.Cursor = System.Windows.Forms.Cursors.Hand;
+        this.btnSimulateRemoteAgentDrop.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+        this.btnSimulateRemoteAgentDrop.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
+        this.btnSimulateRemoteAgentDrop.ForeColor = System.Drawing.Color.White;
+        this.btnSimulateRemoteAgentDrop.Location = new System.Drawing.Point(360, 72);
+        this.btnSimulateRemoteAgentDrop.Name = "btnSimulateRemoteAgentDrop";
+        this.btnSimulateRemoteAgentDrop.Size = new System.Drawing.Size(265, 32);
+        this.btnSimulateRemoteAgentDrop.TabIndex = 5;
+        this.btnSimulateRemoteAgentDrop.Text = "💥 4. Yêu Cầu Master Kill Socket Agent";
+        this.btnSimulateRemoteAgentDrop.UseVisualStyleBackColor = false;
+
+        // lblScenarioDesc
+        this.lblScenarioDesc.AutoSize = true;
+        this.lblScenarioDesc.Font = new System.Drawing.Font("Segoe UI", 8.5F, System.Drawing.FontStyle.Italic);
+        this.lblScenarioDesc.ForeColor = System.Drawing.Color.FromArgb(100, 116, 139);
+        this.lblScenarioDesc.Location = new System.Drawing.Point(20, 120);
+        this.lblScenarioDesc.Name = "lblScenarioDesc";
+        this.lblScenarioDesc.Size = new System.Drawing.Size(640, 15);
+        this.lblScenarioDesc.TabIndex = 6;
+        this.lblScenarioDesc.Text = "Gợi ý: Bấm [Ngắt Socket Client] để quan sát Client chuyển sang RECONNECTING (Màu Cam) và tự động kết nối lại theo Exponential Backoff.";
+
+        // grpResilienceLog
+        this.grpResilienceLog.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) | System.Windows.Forms.AnchorStyles.Left) | System.Windows.Forms.AnchorStyles.Right)));
+        this.grpResilienceLog.Controls.Add(this.rtbResilienceLog);
+        this.grpResilienceLog.Controls.Add(this.pnlResilienceBottom);
+        this.grpResilienceLog.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
+        this.grpResilienceLog.Location = new System.Drawing.Point(16, 185);
+        this.grpResilienceLog.Name = "grpResilienceLog";
+        this.grpResilienceLog.Size = new System.Drawing.Size(944, 330);
+        this.grpResilienceLog.TabIndex = 1;
+        this.grpResilienceLog.TabStop = false;
+        this.grpResilienceLog.Text = "Nhật Ký & Timeline Tự Động Phục Hồi (Failure & Recovery Timeline Audit)";
+
+        // rtbResilienceLog
+        this.rtbResilienceLog.BackColor = System.Drawing.Color.FromArgb(15, 23, 42); // Slate-900
+        this.rtbResilienceLog.BorderStyle = System.Windows.Forms.BorderStyle.None;
+        this.rtbResilienceLog.Dock = System.Windows.Forms.DockStyle.Fill;
+        this.rtbResilienceLog.Font = new System.Drawing.Font("Consolas", 9.5F);
+        this.rtbResilienceLog.ForeColor = System.Drawing.Color.FromArgb(52, 211, 153); // Emerald
+        this.rtbResilienceLog.Location = new System.Drawing.Point(3, 20);
+        this.rtbResilienceLog.Name = "rtbResilienceLog";
+        this.rtbResilienceLog.ReadOnly = true;
+        this.rtbResilienceLog.ScrollBars = System.Windows.Forms.RichTextBoxScrollBars.Both;
+        this.rtbResilienceLog.Size = new System.Drawing.Size(938, 269);
+        this.rtbResilienceLog.TabIndex = 0;
+        this.rtbResilienceLog.Text = "";
+        this.rtbResilienceLog.WordWrap = false;
+
+        // pnlResilienceBottom
+        this.pnlResilienceBottom.Controls.Add(this.lblResilienceStatus);
+        this.pnlResilienceBottom.Controls.Add(this.btnCopyResilienceLog);
+        this.pnlResilienceBottom.Controls.Add(this.btnClearResilienceLog);
+        this.pnlResilienceBottom.Dock = System.Windows.Forms.DockStyle.Bottom;
+        this.pnlResilienceBottom.Location = new System.Drawing.Point(3, 289);
+        this.pnlResilienceBottom.Name = "pnlResilienceBottom";
+        this.pnlResilienceBottom.Size = new System.Drawing.Size(938, 38);
+        this.pnlResilienceBottom.TabIndex = 1;
+
+        // btnClearResilienceLog
+        this.btnClearResilienceLog.BackColor = System.Drawing.Color.FromArgb(241, 245, 249);
+        this.btnClearResilienceLog.Cursor = System.Windows.Forms.Cursors.Hand;
+        this.btnClearResilienceLog.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+        this.btnClearResilienceLog.Font = new System.Drawing.Font("Segoe UI", 9F);
+        this.btnClearResilienceLog.Location = new System.Drawing.Point(10, 5);
+        this.btnClearResilienceLog.Name = "btnClearResilienceLog";
+        this.btnClearResilienceLog.Size = new System.Drawing.Size(120, 28);
+        this.btnClearResilienceLog.TabIndex = 0;
+        this.btnClearResilienceLog.Text = "Xóa Nhật Ký";
+        this.btnClearResilienceLog.UseVisualStyleBackColor = true;
+
+        // btnCopyResilienceLog
+        this.btnCopyResilienceLog.BackColor = System.Drawing.Color.FromArgb(241, 245, 249);
+        this.btnCopyResilienceLog.Cursor = System.Windows.Forms.Cursors.Hand;
+        this.btnCopyResilienceLog.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+        this.btnCopyResilienceLog.Font = new System.Drawing.Font("Segoe UI", 9F);
+        this.btnCopyResilienceLog.Location = new System.Drawing.Point(140, 5);
+        this.btnCopyResilienceLog.Name = "btnCopyResilienceLog";
+        this.btnCopyResilienceLog.Size = new System.Drawing.Size(150, 28);
+        this.btnCopyResilienceLog.TabIndex = 1;
+        this.btnCopyResilienceLog.Text = "Sao Chép Báo Cáo";
+        this.btnCopyResilienceLog.UseVisualStyleBackColor = true;
+
+        // lblResilienceStatus
+        this.lblResilienceStatus.AutoSize = true;
+        this.lblResilienceStatus.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Italic);
+        this.lblResilienceStatus.ForeColor = System.Drawing.Color.FromArgb(100, 116, 139);
+        this.lblResilienceStatus.Location = new System.Drawing.Point(310, 11);
+        this.lblResilienceStatus.Name = "lblResilienceStatus";
+        this.lblResilienceStatus.Size = new System.Drawing.Size(265, 15);
+        this.lblResilienceStatus.TabIndex = 2;
+        this.lblResilienceStatus.Text = "Trạng thái: Sẵn sàng thực thi kiểm thử sự cố mạng";
+
+        // ==========================================
         // statusStrip
         // ==========================================
         this.statusStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
@@ -1041,6 +1256,7 @@ partial class MainForm
     private System.Windows.Forms.TabPage tabDashboard;
     private System.Windows.Forms.TabPage tabCommands;
     private System.Windows.Forms.TabPage tabInspector;
+    private System.Windows.Forms.TabPage tabResilience;
 
     private System.Windows.Forms.GroupBox grpConnection;
     private System.Windows.Forms.Label lblHost;
@@ -1049,6 +1265,7 @@ partial class MainForm
     private System.Windows.Forms.NumericUpDown numPort;
     private System.Windows.Forms.Button btnConnect;
     private System.Windows.Forms.Button btnDisconnect;
+    private System.Windows.Forms.Button btnSimulateDrop;
     private System.Windows.Forms.Label lblConnectionStatus;
     private System.Windows.Forms.CheckBox chkAutoReconnect;
 
@@ -1111,6 +1328,23 @@ partial class MainForm
     private System.Windows.Forms.TextBox txtWireTotalSize;
     private System.Windows.Forms.Button btnCopyJson;
     private System.Windows.Forms.RichTextBox rtbFrameJson;
+
+    // Resilience Tab Controls (T19.3)
+    private System.Windows.Forms.GroupBox grpFailureScenarios;
+    private System.Windows.Forms.Button btnSimulateClientDrop;
+    private System.Windows.Forms.Button btnSimulateSilence;
+    private System.Windows.Forms.Label lblTargetAgentPrompt;
+    private System.Windows.Forms.TextBox txtTargetAgentId;
+    private System.Windows.Forms.Button btnSimulateRemoteAgentDrop;
+    private System.Windows.Forms.Button btnSimulateFuzzing;
+    private System.Windows.Forms.Label lblScenarioDesc;
+
+    private System.Windows.Forms.GroupBox grpResilienceLog;
+    private System.Windows.Forms.RichTextBox rtbResilienceLog;
+    private System.Windows.Forms.Panel pnlResilienceBottom;
+    private System.Windows.Forms.Button btnClearResilienceLog;
+    private System.Windows.Forms.Button btnCopyResilienceLog;
+    private System.Windows.Forms.Label lblResilienceStatus;
 
     private System.Windows.Forms.StatusStrip statusStrip;
     private System.Windows.Forms.ToolStripStatusLabel statusLabel;

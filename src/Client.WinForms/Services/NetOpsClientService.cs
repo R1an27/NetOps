@@ -177,8 +177,8 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
 
         // Đánh dấu người dùng chủ động ngắt, không kích hoạt tự động kết nối lại
         _isUserDisconnecting = true;
-        _reconnectCts?.Cancel();
-        _readCts?.Cancel();
+        try { _reconnectCts?.Cancel(); } catch { }
+        try { _readCts?.Cancel(); } catch { }
 
         var readTask = _readTask;
         _readTask = null;
@@ -196,6 +196,32 @@ public sealed class NetOpsClientService : IAsyncDisposable, IDisposable
 
         await CleanupResourcesAsync().ConfigureAwait(false);
         SetState(ConnectionState.Disconnected, "Người dùng chủ động ngắt kết nối.");
+    }
+
+    /// <summary>
+    /// Giai đoạn T19.2: Giả lập ngắt kết nối socket đột ngột từ phía WinForms Client (Abrupt Socket Drop / RST).
+    /// Đóng cưỡng chế socket TCP bên dưới mà không bật cờ _isUserDisconnecting,
+    /// kích hoạt cơ chế phát hiện lỗi mạng và quy trình tự động kết nối lại (Auto-Reconnect).
+    /// </summary>
+    public void SimulateAbruptDisconnect()
+    {
+        if (State == ConnectionState.Disconnected)
+        {
+            return;
+        }
+
+        try
+        {
+            _channel?.Dispose();
+        }
+        catch { }
+
+        try
+        {
+            _tcpClient?.Client?.Close(0);
+            _tcpClient?.Dispose();
+        }
+        catch { }
     }
 
     /// <summary>

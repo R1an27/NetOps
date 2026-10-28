@@ -454,6 +454,18 @@ public class WorkerTests
             }
             return Task.CompletedTask;
         }
+
+        public bool IsHeartbeatSilenced { get; set; }
+
+        public void SimulateAbruptDisconnect()
+        {
+            TriggerDisconnected();
+        }
+
+        public void SimulateHeartbeatSilence(bool silence)
+        {
+            IsHeartbeatSilenced = silence;
+        }
     }
 
     #endregion

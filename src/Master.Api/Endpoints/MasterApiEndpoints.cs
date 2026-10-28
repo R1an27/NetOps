@@ -3,6 +3,7 @@ using Master.Api.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ServerManager.Shared.Contracts.Models;
 using ServerManager.Shared.Contracts.Payloads;
@@ -289,6 +290,76 @@ public static class MasterApiEndpoints
         })
         .WithName("BroadcastMessage")
         .WithSummary("Phát sóng thông điệp NetOpsMessage tùy biến tới tất cả các Agent đang kết nối trực tuyến");
+
+        // 8. Endpoint kiểm thử sự cố: Thực thi kịch bản Failure Test chuẩn hóa (T19.2)
+        app.MapPost("/api/fault/simulate", async (
+            FailureTestRequest request,
+            IConnectionManager connectionManager,
+            IServiceProvider serviceProvider,
+            CancellationToken cancellationToken) =>
+        {
+            if (request == null)
+            {
+                return Results.BadRequest(new { Message = "FailureTestRequest is required." });
+            }
+
+            var failureService = serviceProvider.GetService<IFailureTestService>()
+                ?? new FailureTestService(connectionManager);
+
+            var report = await failureService.ExecuteScenarioAsync(request, cancellationToken);
+            return Results.Ok(report);
+        })
+        .WithName("SimulateFailureScenario")
+        .WithSummary("Thực thi một kịch bản kiểm thử sự cố mạng và phục hồi (Failure Test / Chaos Injection)");
+
+        // 9. Endpoint kiểm thử sự cố: Cưỡng chế ngắt socket của một Agent cụ thể (T19.2)
+        app.MapPost("/api/fault/drop-socket/{agentId}", (
+            string agentId,
+            IConnectionManager connectionManager,
+            IServiceProvider serviceProvider) =>
+        {
+            if (string.IsNullOrWhiteSpace(agentId))
+            {
+                return Results.BadRequest(new { Message = "AgentId is required." });
+            }
+
+            var failureService = serviceProvider.GetService<IFailureTestService>()
+                ?? new FailureTestService(connectionManager);
+
+            bool terminated = failureService.TerminateSessionAbruptly(agentId, DisconnectReason.NetworkFault);
+            if (!terminated)
+            {
+                return Results.NotFound(new
+                {
+                    Success = false,
+                    Message = $"Active session for Agent '{agentId}' not found to terminate.",
+                    AgentId = agentId
+                });
+            }
+
+            return Results.Ok(new
+            {
+                Success = true,
+                AgentId = agentId,
+                Message = $"Socket for Agent '{agentId}' terminated abruptly with TCP RST simulation."
+            });
+        })
+        .WithName("DropAgentSocketAbruptly")
+        .WithSummary("Cưỡng chế ngắt kết nối socket của Agent để kiểm thử khả năng tự động kết nối lại");
+
+        // 10. Endpoint lấy danh sách các kịch bản kiểm thử sự cố được hỗ trợ (T19.2)
+        app.MapGet("/api/fault/scenarios", (
+            IConnectionManager connectionManager,
+            IServiceProvider serviceProvider) =>
+        {
+            var failureService = serviceProvider.GetService<IFailureTestService>()
+                ?? new FailureTestService(connectionManager);
+
+            var scenarios = failureService.GetSupportedScenarios();
+            return Results.Ok(scenarios);
+        })
+        .WithName("GetSupportedFailureScenarios")
+        .WithSummary("Liệt kê danh sách các kịch bản kiểm thử sự cố mạng được hỗ trợ");
 
         return app;
     }

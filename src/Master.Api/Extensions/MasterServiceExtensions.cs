@@ -62,6 +62,9 @@ public static class MasterServiceExtensions
         // 7. Đăng ký Session Watchdog Service chạy nền giám sát và dọn dẹp Half-Open Socket định kỳ (tương thích ngược)
         services.AddHostedService<SessionWatchdogService>();
 
+        // 8. Đăng ký Failure Test Service kiểm thử sự cố mạng và phục hồi (T19.2)
+        services.AddSingleton<IFailureTestService, FailureTestService>();
+
         return services;
     }
 }

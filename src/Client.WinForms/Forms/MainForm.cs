@@ -50,6 +50,15 @@ public partial class MainForm : Form
         dgvFrames.SelectionChanged += OnDgvFramesSelectionChanged;
         btnClearInspector.Click += (_, _) => ClearInspector();
         btnCopyJson.Click += (_, _) => CopyCurrentFrameJson();
+
+        // Đăng ký sự kiện kiểm thử sự cố mạng & Phục hồi (T19.3)
+        btnSimulateDrop.Click += (_, _) => HandleSimulateClientDrop();
+        btnSimulateClientDrop.Click += (_, _) => HandleSimulateClientDrop();
+        btnSimulateSilence.Click += (_, _) => HandleSimulateSilence();
+        btnSimulateRemoteAgentDrop.Click += async (_, _) => await HandleSimulateRemoteAgentDropAsync().ConfigureAwait(false);
+        btnSimulateFuzzing.Click += async (_, _) => await HandleSimulateFuzzingAsync().ConfigureAwait(false);
+        btnClearResilienceLog.Click += (_, _) => ClearResilienceLog();
+        btnCopyResilienceLog.Click += (_, _) => CopyResilienceLog();
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -131,6 +140,8 @@ public partial class MainForm : Form
                     // Phân quyền điều khiển: Khóa nút Connect, cho phép Disconnect, mở toàn quyền kiểm tra Ping/Heartbeat/Command
                     btnConnect.Enabled = false;
                     btnDisconnect.Enabled = true;
+                    btnSimulateDrop.Enabled = true;
+                    btnSimulateClientDrop.Enabled = true;
                     btnPing.Enabled = true;
                     btnHeartbeat.Enabled = true;
                     chkAutoHeartbeat.Enabled = true;
@@ -144,6 +155,7 @@ public partial class MainForm : Form
                     lblConnectionStatus.ForeColor = Color.FromArgb(16, 185, 129);
                     statusLabel.Text = "Connected";
                     statusEndpoint.Text = $" | Endpoint: {_clientService.ConnectedEndpoint}";
+                    LogResilience("CONNECTED", $"[{DateTime.Now:HH:mm:ss.fff}] Kết nối TCP đã thiết lập thành công tới {_clientService.ConnectedEndpoint}", Color.FromArgb(52, 211, 153));
                     break;
 
                 case ConnectionState.Connecting:
@@ -155,6 +167,8 @@ public partial class MainForm : Form
                     // Khóa mọi nút bấm để tránh người dùng thao tác trùng lặp trong khi đang bắt tay mạng
                     btnConnect.Enabled = false;
                     btnDisconnect.Enabled = false;
+                    btnSimulateDrop.Enabled = false;
+                    btnSimulateClientDrop.Enabled = false;
                     btnPing.Enabled = false;
                     btnHeartbeat.Enabled = false;
                     chkAutoHeartbeat.Enabled = false;
@@ -168,6 +182,7 @@ public partial class MainForm : Form
                     lblConnectionStatus.ForeColor = Color.FromArgb(217, 119, 6);
                     statusLabel.Text = "Connecting...";
                     statusEndpoint.Text = $" | Endpoint: {_clientService.ConnectedEndpoint ?? "Connecting..."}";
+                    LogResilience("CONNECTING", $"[{DateTime.Now:HH:mm:ss.fff}] Đang bắt tay kết nối TCP...", Color.FromArgb(251, 191, 36));
                     break;
 
                 case ConnectionState.Reconnecting:
@@ -179,6 +194,8 @@ public partial class MainForm : Form
                     // Khóa Connect, cho phép Disconnect để người dùng có thể chủ động hủy kết nối lại nếu muốn
                     btnConnect.Enabled = false;
                     btnDisconnect.Enabled = true;
+                    btnSimulateDrop.Enabled = false;
+                    btnSimulateClientDrop.Enabled = false;
                     btnPing.Enabled = false;
                     btnHeartbeat.Enabled = false;
                     chkAutoHeartbeat.Enabled = false;
@@ -193,6 +210,7 @@ public partial class MainForm : Form
                     lblConnectionStatus.ForeColor = Color.FromArgb(234, 88, 12);
                     statusLabel.Text = e.Attempt > 0 ? $"Reconnecting (Attempt {e.Attempt})..." : "Reconnecting...";
                     statusEndpoint.Text = $" | Target: {_clientService.ConnectedEndpoint ?? "Waiting..."}";
+                    LogResilience("RECONNECTING", $"[{DateTime.Now:HH:mm:ss.fff}] Phát hiện mất mạng! Đang tự động kết nối lại lần {e.Attempt}{retryDelayText}. Lý do: {e.Message}", Color.FromArgb(251, 146, 60));
                     break;
 
                 case ConnectionState.Disconnected:
@@ -205,6 +223,8 @@ public partial class MainForm : Form
                     // Mở lại các điều khiển Host, Port, nút Connect cho phép người dùng cấu hình lại
                     btnConnect.Enabled = true;
                     btnDisconnect.Enabled = false;
+                    btnSimulateDrop.Enabled = false;
+                    btnSimulateClientDrop.Enabled = false;
                     btnPing.Enabled = false;
                     btnHeartbeat.Enabled = false;
                     chkAutoHeartbeat.Enabled = false;
@@ -220,6 +240,7 @@ public partial class MainForm : Form
                     lblConnectionStatus.ForeColor = Color.FromArgb(100, 116, 139);
                     statusLabel.Text = "Disconnected";
                     statusEndpoint.Text = " | Endpoint: Not connected";
+                    LogResilience("DISCONNECTED", $"[{DateTime.Now:HH:mm:ss.fff}] Đã ngắt kết nối. Thông điệp: {e.Message}", Color.FromArgb(148, 163, 184));
                     break;
             }
         });
@@ -649,6 +670,148 @@ public partial class MainForm : Form
             {
                 Clipboard.SetText(jsonToCopy);
                 MessageBox.Show(this, "Đã sao chép chuỗi JSON vào Clipboard thành công!", "Đã sao chép", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        });
+    }
+
+    #endregion
+
+    #region Failure & Resilience Event Handlers (T19.3)
+    
+    /// <summary>
+    /// Giai đoạn T19.3: Xử lý sự cố mạng - Tấn công giả lập Local Client Drop Socket
+    /// </summary>
+    private void HandleSimulateClientDrop()
+    {
+        if (!_clientService.IsConnected)
+        {
+            MessageBox.Show(this, "Client hiện chưa kết nối đến server để ngắt socket.", "Chưa kết nối", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        LogResilience("TRIGGER", $"[{DateTime.Now:HH:mm:ss.fff}] Cưỡng chế ngắt socket kết nối Client (Abrupt Socket Drop / TCP RST)...", Color.FromArgb(245, 158, 11));
+        _clientService.SimulateAbruptDisconnect();
+    }
+
+    /// <summary>
+    /// Giai đoạn T19.3: Xử lý sự cố mạng - Tấn công giả lập Client Silence (Im lặng)
+    /// </summary>
+    private void HandleSimulateSilence()
+    {
+        if (chkAutoHeartbeat.Checked)
+        {
+            chkAutoHeartbeat.Checked = false;
+            LogResilience("SILENCE", $"[{DateTime.Now:HH:mm:ss.fff}] Đã tạm dừng Auto Heartbeat! Client chuyển sang trạng thái im lặng để kiểm thử Watchdog Master phát hiện kết nối chết ngầm (Half-Open)...", Color.FromArgb(239, 68, 68));
+        }
+        else
+        {
+            chkAutoHeartbeat.Checked = true;
+            LogResilience("RESUME", $"[{DateTime.Now:HH:mm:ss.fff}] Đã kích hoạt lại Auto Heartbeat bình thường.", Color.FromArgb(52, 211, 153));
+        }
+    }
+
+    /// <summary>
+    /// Giai đoạn T19.3: Xử lý sự cố mạng - Tấn công giả lập Remote Agent Drop Socket
+    /// </summary>
+    private async Task HandleSimulateRemoteAgentDropAsync()
+    {
+        string targetAgentId = txtTargetAgentId.Text.Trim();
+        if (string.IsNullOrEmpty(targetAgentId))
+        {
+            MessageBox.Show(this, "Vui lòng nhập Agent ID cần ngắt socket từ xa.", "Lỗi nhập liệu", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        string host = txtHost.Text.Trim();
+        if (string.IsNullOrEmpty(host)) host = "127.0.0.1";
+
+        try
+        {
+            LogResilience("HTTP_CALL", $"[{DateTime.Now:HH:mm:ss.fff}] Đang gửi yêu cầu tới Master API để kill socket của Agent '{targetAgentId}'...", Color.FromArgb(129, 140, 248));
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            var response = await httpClient.PostAsync($"http://{host}:5000/api/fault/drop-socket/{targetAgentId}", null).ConfigureAwait(false);
+
+            string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                LogResilience("KILL_OK", $"[{DateTime.Now:HH:mm:ss.fff}] Master đã cưỡng chế ngắt socket của Agent '{targetAgentId}' thành công! Phản hồi: {responseBody}", Color.FromArgb(52, 211, 153));
+            }
+            else
+            {
+                LogResilience("KILL_WARN", $"[{DateTime.Now:HH:mm:ss.fff}] Master phản hồi HTTP {(int)response.StatusCode}: {responseBody}", Color.FromArgb(251, 191, 36));
+            }
+        }
+        catch (Exception ex)
+        {
+            LogResilience("ERROR", $"[{DateTime.Now:HH:mm:ss.fff}] Không thể kết nối tới Master API (http://{host}:5000): {ex.Message}", Color.FromArgb(239, 68, 68));
+        }
+    }
+
+    /// <summary>
+    /// Giai đoạn T19.3: Xử lý sự cố mạng - Tấn công giả lập Protocol Fuzzing
+    /// </summary>
+    private async Task HandleSimulateFuzzingAsync()
+    {
+        string host = txtHost.Text.Trim();
+        if (string.IsNullOrEmpty(host)) host = "127.0.0.1";
+
+        try
+        {
+            LogResilience("FUZZING", $"[{DateTime.Now:HH:mm:ss.fff}] Bắt đầu kiểm thử tính năng phòng thủ DoS OOM 16MB (Protocol Fuzzing Defense)...", Color.FromArgb(167, 139, 250));
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            var requestObj = new FailureTestRequest
+            {
+                Scenario = FailureScenarioType.MalformedPacketAttack,
+                TargetAgentId = "Self-Defense"
+            };
+
+            var content = new StringContent(
+                System.Text.Json.JsonSerializer.Serialize(requestObj),
+                System.Text.Encoding.UTF8,
+                "application/json");
+
+            var response = await httpClient.PostAsync($"http://{host}:5000/api/fault/simulate", content).ConfigureAwait(false);
+            string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+            LogResilience("DEFENSE_OK", $"[{DateTime.Now:HH:mm:ss.fff}] Kết quả thẩm định: {responseBody}", Color.FromArgb(52, 211, 153));
+        }
+        catch (Exception ex)
+        {
+            LogResilience("ERROR", $"[{DateTime.Now:HH:mm:ss.fff}] Lỗi khi kiểm thử Fuzzing qua HTTP API: {ex.Message}", Color.FromArgb(239, 68, 68));
+        }
+    }
+
+    private void LogResilience(string phase, string message, Color color)
+    {
+        SafeInvoke(() =>
+        {
+            rtbResilienceLog.SelectionStart = rtbResilienceLog.TextLength;
+            rtbResilienceLog.SelectionLength = 0;
+            rtbResilienceLog.SelectionColor = color;
+            rtbResilienceLog.AppendText($"[{phase}] {message}\n");
+            rtbResilienceLog.ScrollToCaret();
+
+            lblResilienceStatus.Text = $"Trạng thái gần nhất: [{phase}] {DateTime.Now:HH:mm:ss}";
+        });
+    }
+
+    private void ClearResilienceLog()
+    {
+        SafeInvoke(() =>
+        {
+            rtbResilienceLog.Clear();
+            lblResilienceStatus.Text = "Trạng thái: Đã xóa nhật ký";
+        });
+    }
+
+    private void CopyResilienceLog()
+    {
+        SafeInvoke(() =>
+        {
+            if (!string.IsNullOrEmpty(rtbResilienceLog.Text))
+            {
+                Clipboard.SetText(rtbResilienceLog.Text);
+                MessageBox.Show(this, "Đã sao chép toàn bộ báo cáo kiểm thử sự cố vào Clipboard!", "Đã sao chép", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         });
     }

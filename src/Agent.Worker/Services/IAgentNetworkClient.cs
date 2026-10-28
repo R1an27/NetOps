@@ -56,4 +56,21 @@ public interface IAgentNetworkClient
     /// <param name="cancellationToken">Mã hủy tác vụ bất đồng bộ</param>
     /// <returns>Tác vụ Task đại diện cho quá trình gửi thông điệp</returns>
     Task SendMessageAsync(NetOpsMessage message, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Giai đoạn T19.2: Giả lập ngắt kết nối socket cưỡng chế đột ngột (Abrupt Socket Drop).
+    /// Đóng kênh truyền hiện tại để kích hoạt vòng lặp Auto-Reconnect theo Exponential Backoff.
+    /// </summary>
+    void SimulateAbruptDisconnect();
+
+    /// <summary>
+    /// Giai đoạn T19.2: Giả lập Agent bị đơ hoặc đứt mạng một chiều (Silent Drop / Dead Agent).
+    /// Tạm dừng gửi PING nhịp tim để kiểm thử Watchdog phía Master.
+    /// </summary>
+    void SimulateHeartbeatSilence(bool silence);
+
+    /// <summary>
+    /// Cho biết chu kỳ gửi PING nhịp tim có đang bị tạm dừng hay không.
+    /// </summary>
+    bool IsHeartbeatSilenced { get; }
 }
