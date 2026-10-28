@@ -220,7 +220,9 @@ public class AgentReconnectTests
         var run = agent.RunAsync("127.0.0.1", port, "agent-test", TimeSpan.FromSeconds(1), cts.Token);
         try
         {
-            Assert.True(await WaitUntilAsync(() => agent.CurrentState == AgentConnectionState.Connected));
+            // Đảm bảo Agent đã báo Connected VÀ Master1 đã hoàn tất nhận socket vào danh sách kết nối (tránh race condition)
+            Assert.True(await WaitUntilAsync(() =>
+                agent.CurrentState == AgentConnectionState.Connected && master1.ClientCount >= 1));
 
             // Master "chết": đóng cổng lắng nghe và mọi kết nối đang mở
             await master1.DisposeAsync();
@@ -280,6 +282,17 @@ public class AgentReconnectTests
 
         public int AcceptedCount => Volatile.Read(ref _accepted);
 
+        public int ClientCount
+        {
+            get
+            {
+                lock (_clients)
+                {
+                    return _clients.Count;
+                }
+            }
+        }
+
         public FakeMaster(int port = 0, bool closeImmediately = false)
         {
             _closeImmediately = closeImmediately;
@@ -313,10 +326,10 @@ public class AgentReconnectTests
                 while (true)
                 {
                     var client = await _listener.AcceptTcpClientAsync(_cts.Token);
-                    Interlocked.Increment(ref _accepted);
 
                     if (_closeImmediately)
                     {
+                        Interlocked.Increment(ref _accepted);
                         client.Dispose();
                     }
                     else
@@ -325,6 +338,7 @@ public class AgentReconnectTests
                         {
                             _clients.Add(client);
                         }
+                        Interlocked.Increment(ref _accepted);
                     }
                 }
             }
@@ -348,6 +362,11 @@ public class AgentReconnectTests
             {
                 foreach (var client in _clients)
                 {
+                    try
+                    {
+                        client.Client?.Shutdown(SocketShutdown.Both);
+                    }
+                    catch { }
                     client.Dispose();
                 }
 
