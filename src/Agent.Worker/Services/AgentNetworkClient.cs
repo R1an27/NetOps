@@ -26,6 +26,14 @@ public class AgentNetworkClient : IAgentNetworkClient
     // Trạng thái kết nối hiện tại, lưu dưới dạng int để đọc/ghi nguyên tử giữa các luồng.
     private int _state = (int)AgentConnectionState.Disconnected;
 
+    // Giai đoạn T19.2: Cờ giả lập ngắt nhịp tim phục vụ kiểm thử Watchdog phía Master
+    private volatile bool _isHeartbeatSilenced;
+
+    /// <summary>
+    /// Cho biết chu kỳ gửi PING nhịp tim có đang bị tạm dừng hay không (T19.2).
+    /// </summary>
+    public bool IsHeartbeatSilenced => _isHeartbeatSilenced;
+
     /// <summary>
     /// Cho biết Agent có đang duy trì kết nối mạng ổn định tới Master hay không.
     /// </summary>
@@ -232,6 +240,14 @@ public class AgentNetworkClient : IAgentNetworkClient
                                     }
                                 }
 
+                                // Giai đoạn T19.2: Giả lập Agent bị đơ hoặc đứt mạng một chiều (Silent Drop)
+                                if (_isHeartbeatSilenced)
+                                {
+                                    _logger.LogWarning("[Agent {AgentId}] Heartbeat is silenced for failure testing. Skipping PING.", agentId);
+                                    await Task.Delay(pingInterval, linkedCts.Token).ConfigureAwait(false);
+                                    continue;
+                                }
+
                                 // Đóng gói Payload chuẩn hóa theo DTO HeartbeatPayload (Mục 4.1 protocol-v0-spec)
                                 var heartbeatPayload = new HeartbeatPayload(agentId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                                 var ping = NetOpsMessage.CreateRequest(MessageType.Ping, heartbeatPayload);
@@ -334,5 +350,30 @@ public class AgentNetworkClient : IAgentNetworkClient
         _logger.LogInformation(
             "[AgentNetworkClient] Actively sent message '{Type}' (Id: {MessageId}) to {Endpoint}",
             message.MessageType, message.MessageId, ConnectedEndpoint ?? "Unknown");
+    }
+
+    /// <summary>
+    /// Giai đoạn T19.2: Giả lập ngắt kết nối socket cưỡng chế đột ngột từ phía Agent (Abrupt Socket Drop / RST).
+    /// Đóng giải phóng kênh truyền hiện tại mà không chờ đóng êm dịu, kích hoạt chu trình Reconnecting theo Exponential Backoff.
+    /// </summary>
+    public void SimulateAbruptDisconnect()
+    {
+        _logger.LogWarning("[AgentNetworkClient] Simulating abrupt socket disconnect (Fault Injection T19.2)...");
+        lock (_channelLock)
+        {
+            _activeChannel?.Dispose();
+            _activeChannel = null;
+        }
+    }
+
+    /// <summary>
+    /// Giai đoạn T19.2: Giả lập ngắt nhịp tim PING (Silent Drop / Dead Agent).
+    /// Tạm dừng gửi PING để kiểm thử Watchdog trên Master phát hiện kết nối chết ngầm sau 15 giây.
+    /// </summary>
+    /// <param name="silence">True để tạm dừng gửi PING, False để tiếp tục bình thường</param>
+    public void SimulateHeartbeatSilence(bool silence)
+    {
+        _isHeartbeatSilenced = silence;
+        _logger.LogWarning("[AgentNetworkClient] Heartbeat silence set to {Silence} (Fault Injection T19.2)", silence);
     }
 }
