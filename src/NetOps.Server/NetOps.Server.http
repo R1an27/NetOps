@@ -1,0 +1,6 @@
+@NetOps.Server_HostAddress = http://localhost:5105
+
+GET {{NetOps.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
