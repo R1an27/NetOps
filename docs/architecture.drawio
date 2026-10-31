@@ -1,0 +1,97 @@
+<mxfile host="localhost">
+  <diagram id="q4fmtipu-ztfl" name="Page-1">
+    <mxGraphModel dx="1154" dy="616" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="admin_box" parent="1" style="rounded=1;fillColor=#f8f9fa;strokeColor=#d0d7de;strokeWidth=1.5;fontStyle=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;fontColor=#57606a;whiteSpace=wrap;html=1;" value="ADMIN CLIENT" vertex="1">
+          <mxGeometry height="95" width="680" x="40" y="15" as="geometry" />
+        </mxCell>
+        <mxCell id="node_ui" parent="admin_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/computer/v6/24px.svg;" value="WinForms" vertex="1">
+          <mxGeometry height="48" width="48" x="80" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="node_term" parent="admin_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/code/v6/24px.svg;" value="xterm.js" vertex="1">
+          <mxGeometry height="48" width="48" x="295" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="node_client_auth" parent="admin_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/keycloak.svg;" value="Keycloak" vertex="1">
+          <mxGeometry height="48" width="48" x="525" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="cloud_box" parent="1" style="rounded=1;fillColor=#f0f7ff;strokeColor=#0969da;strokeWidth=1.5;fontStyle=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;fontColor=#0969da;whiteSpace=wrap;html=1;" value="CLOUD (.NET ASPIRE)" vertex="1">
+          <mxGeometry height="230" width="680" x="40" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="node_api" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/dns/v6/24px.svg;" value="Web API" vertex="1">
+          <mxGeometry height="48" width="48" x="80" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="node_mq" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/rabbitmq.svg;" value="RabbitMQ" vertex="1">
+          <mxGeometry height="48" width="48" x="295" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="node_keycloak" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/keycloak.svg;" value="Keycloak" vertex="1">
+          <mxGeometry height="48" width="48" x="525" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="node_prom" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/prometheus.svg;" value="Prometheus" vertex="1">
+          <mxGeometry height="48" width="48" x="80" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="node_grpc" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/sync_alt/v6/24px.svg;" value="gRPC Hub" vertex="1">
+          <mxGeometry height="48" width="48" x="295" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="node_ssh_winrm" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/vpn_key/v6/24px.svg;" value="SSH / WinRM" vertex="1">
+          <mxGeometry height="48" width="48" x="525" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="nat_box" parent="1" style="rounded=1;fillColor=#fcf8ff;strokeColor=#8250df;strokeWidth=1.5;fontStyle=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;fontColor=#8250df;whiteSpace=wrap;html=1;" value="PRIVATE HOSTS (NAT)" vertex="1">
+          <mxGeometry height="130" width="420" x="40" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="node_otel" parent="nat_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/insights/v6/24px.svg;" value="OTel" vertex="1">
+          <mxGeometry height="48" width="48" x="80" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="node_agent" parent="nat_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/bolt/v6/24px.svg;" value="Agent (AOT)" vertex="1">
+          <mxGeometry height="48" width="48" x="295" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="direct_box" parent="1" style="rounded=1;fillColor=#f6f8fa;strokeColor=#8c959f;strokeWidth=1.5;fontStyle=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;fontColor=#57606a;whiteSpace=wrap;html=1;" value="AGENTLESS HOSTS" vertex="1">
+          <mxGeometry height="130" width="240" x="480" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="node_linux" parent="direct_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/linux.svg;" value="Linux" vertex="1">
+          <mxGeometry height="48" width="48" x="30" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="node_win" parent="direct_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/windows.svg;" value="Windows" vertex="1">
+          <mxGeometry height="48" width="48" x="145" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="node_ui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_api" value="REST">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="node_api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_prom" value="PromQL">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="node_otel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=0;entryX=0.5;entryY=1;strokeColor=#1a7f37;strokeWidth=2;html=1;" target="node_prom" value="OTLP">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="node_term" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_mq" value="Shell">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="node_mq" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_grpc" value="Stream">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="node_agent" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=0;entryX=0.5;entryY=1;strokeColor=#8250df;strokeWidth=2.5;html=1;" target="node_grpc" value="Reverse gRPC">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="node_client_auth" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#cf222e;html=1;" target="node_keycloak" value="OIDC">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="node_keycloak" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#cf222e;html=1;" target="node_ssh_winrm" value="RBAC">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="node_ssh_winrm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeWidth=1.5;strokeColor=#6e7781;fontSize=10;fontColor=#57606a;exitX=0.25;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_linux" value="SSH:22">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="node_ssh_winrm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeWidth=1.5;strokeColor=#6e7781;fontSize=10;fontColor=#57606a;exitX=0.75;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_win" value="WinRM:5985">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="node_api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=1;exitY=0.5;entryX=0;entryY=0.5;html=1;" target="node_mq" value="Enqueue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="node_mq" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=1;exitY=0.5;entryX=0;entryY=0.3;html=1;" target="node_ssh_winrm" value="Agentless">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
