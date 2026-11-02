@@ -1,0 +1,74 @@
+﻿// Phiên bản cú pháp Protobuf
+syntax = "proto3";
+
+// Chỉ thị cho compiler protoc đặt toàn bộ mã C# sinh ra vào namespace NetOps.Shared
+// Nhờ vậy NetOps.Server và Netops.agent chỉ cần using NetOps.Shared
+option csharp_namespace = "NetOps.Shared";
+
+package netops;
+
+// Service giao tiếp hai chiều thời gian thực giữa Agent và Server
+service AgentHub {
+  // Bi-directional stream: Agent mở kết nối và duy trì luồng hai chiều
+  rpc ConnectStream (stream AgentMessage) returns (stream ServerMessage);
+}
+
+// THÔNG ĐIỆP ĐẨY LÊN: Agent -> Server
+message AgentMessage {
+  // Vì gRPC chỉ cho phép truyền một kiểu message đại diện trong stream
+  // oneof cho phép AgentMessage đóng gói linh hoạt một trong các thông điệp
+  oneof payload {  
+    RegisterAgentRequest register_request = 1;
+    HeartbeatMessage heartbeat = 2;
+    ShellOutputChunk shell_output = 3;
+  }
+}
+
+// Yêu cầu đăng ký thông tin Agent khi vừa khởi động
+message RegisterAgentRequest {
+  string agent_id = 1;
+  string hostname = 2;
+  string ip_address = 3;
+  string os_description = 4;
+  int32 cpu_cores = 5;
+  int64 total_memory_bytes = 6;
+}
+
+// Bản tin nhịp tim định kỳ (Heartbeat) kèm chỉ số hiệu năng
+message HeartbeatMessage {
+  string agent_id = 1;
+  int64 timestamp_unix_ms = 2;
+  double cpu_usage_percent = 3;
+  int64 memory_used_bytes = 4;
+}
+
+// Kết quả thực thi lệnh shell (stream từng chunk stdout/stderr về Server)
+message ShellOutputChunk {
+  string command_id = 1;
+  string output_data = 2;
+  bool is_error = 3;         // true: stderr, false: stdout
+  bool is_completed = 4;     // true khi tiến trình lệnh kết thúc
+  int32 exit_code = 5;       // Mã trả về khi hoàn tất lệnh (0: thành công)
+}
+
+// THÔNG ĐIỆP HẠ XUỐNG: Server -> Agent
+message ServerMessage {
+  oneof payload {
+    RegisterAgentResponse register_response = 1;
+    ShellCommandRequest shell_command = 2;
+  }
+}
+
+// Phản hồi từ Server sau khi Agent đăng ký
+message RegisterAgentResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Lệnh thực thi từ xa do Server điều khiển
+message ShellCommandRequest {
+  string command_id = 1;
+  string command = 2;
+  string working_directory = 3;
+  int32 timeout_seconds = 4;
+}
