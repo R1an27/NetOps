@@ -1,3 +1,5 @@
+using NetOps.Server.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
@@ -6,6 +8,8 @@ builder.AddServiceDefaults();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddGrpc();
+// Đăng ký cuốn danh bạ hoạt động xuyên suốt vòng đời của Server
+builder.Services.AddSingleton<AgentConnectionManager>();
 
 var app = builder.Build();
 
@@ -37,6 +41,8 @@ app.MapGet("/weatherforecast", () =>
     return forecast;
 })
 .WithName("GetWeatherForecast");
+
+app.MapGrpcService<AgentHubService>();
 
 app.Run();
 
