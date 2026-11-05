@@ -1,0 +1,103 @@
+<mxfile host="localhost">
+  <diagram id="ld1teg57-3g80" name="Page-1">
+    <mxGraphModel dx="1154" dy="616" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="col1" parent="1" style="swimlane;startSize=26;fontStyle=1;fontSize=11;fillColor=#f8f9fa;strokeColor=#0078d4;rounded=1;arcSize=4;whiteSpace=wrap;html=1;" value="1. NetOps.Shared (Contracts &amp; Tooling)" vertex="1">
+          <mxGeometry height="510" width="230" x="20" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="proto_box" parent="col1" style="rounded=1;whiteSpace=wrap;fillColor=#f5f0ff;strokeColor=#7030a0;align=left;spacingLeft=55;html=1;" value="&lt;b&gt;netops.proto&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• syntax = &quot;proto3&quot;&lt;br&gt;• service AgentHub&lt;br&gt;• rpc ConnectStream&lt;br&gt;• AgentMessage (oneof)&lt;br&gt;• ServerMessage (oneof)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="100" width="200" x="15" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="proto_icon" parent="col1" style="image;aspect=fixed;image=img/lib/azure2/general/Code.svg;html=1;" vertex="1">
+          <mxGeometry height="40" width="40" x="25" y="65" as="geometry" />
+        </mxCell>
+        <mxCell id="csproj_box" parent="col1" style="rounded=1;whiteSpace=wrap;fillColor=#eff6fc;strokeColor=#0078d4;align=left;spacingLeft=55;html=1;" value="&lt;b&gt;NetOps.Shared.csproj&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• Grpc.Tools 2.85.0&lt;br&gt;• Google.Protobuf 3.36.2&lt;br&gt;• &amp;lt;Protobuf GrpcServices=&quot;Both&quot;&amp;gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="200" x="15" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="csproj_icon" parent="col1" style="image;aspect=fixed;image=img/lib/azure2/general/File.svg;html=1;" vertex="1">
+          <mxGeometry height="38" width="38" x="25" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="stubs_box" parent="col1" style="rounded=1;whiteSpace=wrap;fillColor=#f0fdf4;strokeColor=#16a34a;align=left;spacingLeft=55;html=1;" value="&lt;b&gt;Generated C# Stubs&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• &lt;b&gt;Netops.cs&lt;/b&gt; (Messages)&lt;br&gt;&amp;nbsp;&amp;nbsp;- RegisterAgentRequest&lt;br&gt;&amp;nbsp;&amp;nbsp;- HeartbeatMessage&lt;br&gt;&amp;nbsp;&amp;nbsp;- ShellCommandRequest/Output&lt;br&gt;• &lt;b&gt;NetopsGrpc.cs&lt;/b&gt;&lt;br&gt;&amp;nbsp;&amp;nbsp;- AgentHub.AgentHubBase&lt;br&gt;&amp;nbsp;&amp;nbsp;- AgentHub.AgentHubClient&lt;/font&gt;" vertex="1">
+          <mxGeometry height="130" width="200" x="15" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="stubs_icon" parent="col1" style="image;aspect=fixed;image=img/lib/azure2/general/Files.svg;html=1;" vertex="1">
+          <mxGeometry height="38" width="38" x="25" y="295" as="geometry" />
+        </mxCell>
+        <mxCell id="col2" parent="1" style="swimlane;startSize=26;fontStyle=1;fontSize=11;fillColor=#f8f9fa;strokeColor=#0284c7;rounded=1;arcSize=4;whiteSpace=wrap;html=1;" value="2. gRPC Bi-directional Stream (HTTP/2)" vertex="1">
+          <mxGeometry height="510" width="240" x="275" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="stream_box" parent="col2" style="rounded=1;whiteSpace=wrap;fillColor=#e0f2fe;strokeColor=#0284c7;align=left;spacingLeft=55;html=1;" value="&lt;b&gt;Full-Duplex ConnectStream&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• Persistent HTTP/2 connection&lt;br&gt;• Zero-polling, real-time push&lt;br&gt;• Auto Keep-Alive PING/PONG&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="210" x="15" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="stream_icon" parent="col2" style="shape=mxgraph.networks.comm_link;fillColor=#0284c7;strokeColor=none;whiteSpace=wrap;html=1;" vertex="1">
+          <mxGeometry height="40" width="40" x="25" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="inbound_box" parent="col2" style="rounded=1;whiteSpace=wrap;fillColor=#f0fdf4;strokeColor=#16a34a;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;Inbound (Agent ➔ Server)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;stream AgentMessage (oneof):&lt;br&gt;&amp;nbsp;1. RegisterAgentRequest&lt;br&gt;&amp;nbsp;2. HeartbeatMessage (mỗi 5s)&lt;br&gt;&amp;nbsp;3. ShellOutputChunk (stdout/err)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="95" width="210" x="15" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="inbound_icon" parent="col2" style="image;aspect=fixed;image=img/lib/azure2/networking/Connections.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="165" as="geometry" />
+        </mxCell>
+        <mxCell id="outbound_box" parent="col2" style="rounded=1;whiteSpace=wrap;fillColor=#eff6fc;strokeColor=#2563eb;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;Outbound (Server ➔ Agent)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;stream ServerMessage (oneof):&lt;br&gt;&amp;nbsp;1. RegisterAgentResponse&lt;br&gt;&amp;nbsp;2. ShellCommandRequest&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="210" x="15" y="255" as="geometry" />
+        </mxCell>
+        <mxCell id="outbound_icon" parent="col2" style="image;aspect=fixed;image=img/lib/azure2/networking/Connections.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="275" as="geometry" />
+        </mxCell>
+        <mxCell id="cancel_box" parent="col2" style="rounded=1;whiteSpace=wrap;fillColor=#fef2f2;strokeColor=#dc2626;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;Lifecycle &amp;amp; Disconnect&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• context.CancellationToken&lt;br&gt;• Graceful: HTTP/2 END_STREAM&lt;br&gt;• Sudden: TCP RST / Keepalive loss&lt;/font&gt;" vertex="1">
+          <mxGeometry height="85" width="210" x="15" y="355" as="geometry" />
+        </mxCell>
+        <mxCell id="cancel_icon" parent="col2" style="shape=mxgraph.basic.flash;fillColor=#dc2626;strokeColor=none;whiteSpace=wrap;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="375" as="geometry" />
+        </mxCell>
+        <mxCell id="col3" parent="1" style="swimlane;startSize=26;fontStyle=1;fontSize=11;fillColor=#f8f9fa;strokeColor=#7c3aed;rounded=1;arcSize=4;whiteSpace=wrap;html=1;" value="3. NetOps.Server (Implementation)" vertex="1">
+          <mxGeometry height="510" width="240" x="540" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="host_box" parent="col3" style="rounded=1;whiteSpace=wrap;fillColor=#f5f3ff;strokeColor=#7c3aed;align=left;spacingLeft=55;html=1;" value="&lt;b&gt;Program.cs &amp;amp; Hosting&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• builder.Services.AddGrpc()&lt;br&gt;• AddSingleton&amp;lt;AgentConnMgr&amp;gt;()&lt;br&gt;• app.MapGrpcService&amp;lt;AgentHub&amp;gt;()&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="210" x="15" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="host_icon" parent="col3" style="shape=mxgraph.networks.server;fillColor=#7c3aed;strokeColor=none;whiteSpace=wrap;html=1;" vertex="1">
+          <mxGeometry height="40" width="40" x="25" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="hub_box" parent="col3" style="rounded=1;whiteSpace=wrap;fillColor=#faf5ff;strokeColor=#9333ea;align=left;spacingLeft=55;html=1;" value="&lt;b&gt;AgentHubService&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• Kế thừa AgentHubBase&lt;br&gt;• ConnectStream(request, response)&lt;br&gt;• await foreach ReadAllAsync()&lt;br&gt;• switch (message.PayloadCase)&lt;br&gt;• try-catch-finally cleanup&lt;/font&gt;" vertex="1">
+          <mxGeometry height="105" width="210" x="15" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="hub_icon" parent="col3" style="image;aspect=fixed;image=img/lib/azure2/app_services/App_Services.svg;html=1;" vertex="1">
+          <mxGeometry height="40" width="40" x="25" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="mgr_box" parent="col3" style="rounded=1;whiteSpace=wrap;fillColor=#fff7ed;strokeColor=#ea580c;align=left;spacingLeft=55;html=1;" value="&lt;b&gt;AgentConnectionManager&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• ConcurrentDictionary&amp;lt;string, Conn&amp;gt;&lt;br&gt;• Register(agentId, stream, info)&lt;br&gt;• UpdateHeartbeat(agentId, hb)&lt;br&gt;• Unregister(agentId) trong finally&lt;/font&gt;" vertex="1">
+          <mxGeometry height="105" width="210" x="15" y="265" as="geometry" />
+        </mxCell>
+        <mxCell id="mgr_icon" parent="col3" style="shape=mxgraph.networks.storage;fillColor=#ea580c;strokeColor=none;whiteSpace=wrap;html=1;" vertex="1">
+          <mxGeometry height="40" width="40" x="25" y="295" as="geometry" />
+        </mxCell>
+        <mxCell id="conn_box" parent="col3" style="rounded=1;whiteSpace=wrap;fillColor=#fefce8;strokeColor=#ca8a04;align=left;spacingLeft=55;html=1;" value="&lt;b&gt;AgentConnection (Per Agent)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• ResponseStream (IServerStreamWriter)&lt;br&gt;• SemaphoreSlim(1,1) Write Lock&lt;br&gt;• Thread-safe SendMessageAsync()&lt;/font&gt;" vertex="1">
+          <mxGeometry height="85" width="210" x="15" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="conn_icon" parent="col3" style="shape=mxgraph.basic.tick;fillColor=#ca8a04;strokeColor=none;whiteSpace=wrap;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="e_proto_to_stubs" edge="1" parent="1" source="proto_box" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#7030a0;strokeWidth=1.5;html=1;" target="stubs_box" value="Grpc.Tools">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_stream_in" edge="1" parent="1" source="inbound_box" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#16a34a;strokeWidth=1.5;html=1;" target="hub_box" value="ReadAllAsync()">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_stream_out" edge="1" parent="1" source="hub_box" style="edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.8;entryX=1;entryY=0.5;strokeColor=#2563eb;strokeWidth=1.5;html=1;" target="outbound_box" value="WriteAsync()">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_hub_to_mgr" edge="1" parent="1" source="hub_box" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#ea580c;strokeWidth=1.5;html=1;" target="mgr_box" value="Register &amp;amp; Heartbeat">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mgr_to_conn" edge="1" parent="1" source="mgr_box" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#ca8a04;strokeWidth=1.5;html=1;" target="conn_box" value="Active Stream Map">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cancel_to_mgr" edge="1" parent="1" source="cancel_box" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.8;strokeColor=#dc2626;strokeWidth=1.5;dashed=1;html=1;" target="mgr_box" value="Unregister on cancel">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
