@@ -23,5 +23,22 @@ if (await stream.ResponseStream.MoveNext(CancellationToken.None))
     Console.WriteLine($"Server phản hồi: {reply.RegisterResponse.Message}");
 }
 
+// Tạo timer đếm chu kỳ 5 giây
+using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+
+while (await timer.WaitForNextTickAsync())
+{
+    var heartbeat = new HeartbeatMessage
+    {
+        AgentId = info.AgentId,
+        TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        CpuUsagePercent = 0.0, // Thu thập ở bước sau
+        MemoryUsedBytes = 0
+    };
+    // Gửi nhịp tim sang Server qua luồng gRPC
+    await stream.RequestStream.WriteAsync(new AgentMessage { Heartbeat = heartbeat });
+    Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] -> Đã gửi Heartbeat tới Server.");
+}
+
 Console.WriteLine("Nhấn phím bất kỳ để ngắt kết nối và thoát...");
 Console.ReadKey();
