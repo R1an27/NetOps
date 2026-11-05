@@ -43,6 +43,7 @@ public class AgentHubService: AgentHub.AgentHubBase
                     case AgentMessage.PayloadOneofCase.RegisterRequest:
                         var reg = message.RegisterRequest;
                         Console.WriteLine($"Agent connect: ID={reg.AgentId}, Hostname={reg.Hostname}");
+                        currentAgentId = reg.AgentId;
 
                         // Lưu AgentId và responseStream (Tin nhắn chào mừng mà server gửi) vào danh bạ
                         _connectionManager.Register(reg.AgentId, responseStream, reg);
