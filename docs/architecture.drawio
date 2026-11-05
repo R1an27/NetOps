@@ -1,94 +1,115 @@
 <mxfile host="localhost">
-  <diagram id="q4fmtipu-ztfl" name="Page-1">
+  <diagram id="5ewbrow9-mfkr" name="Page-1">
     <mxGraphModel dx="1154" dy="616" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="admin_box" parent="1" style="rounded=1;fillColor=#f8f9fa;strokeColor=#d0d7de;strokeWidth=1.5;fontStyle=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;fontColor=#57606a;whiteSpace=wrap;html=1;" value="ADMIN CLIENT" vertex="1">
-          <mxGeometry height="95" width="680" x="40" y="15" as="geometry" />
+        <mxCell id="tier_client" parent="1" style="swimlane;startSize=26;fillColor=#F8FAFC;strokeColor=#94A3B8;rounded=1;fontStyle=1;fontSize=11;fontColor=#334155;whiteSpace=wrap;html=1;" value="TIER 1: CLIENT LAYER (WinForms Desktop App)" vertex="1">
+          <mxGeometry height="95" width="720" x="40" y="20" as="geometry" />
         </mxCell>
-        <mxCell id="node_ui" parent="admin_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/computer/v6/24px.svg;" value="WinForms" vertex="1">
-          <mxGeometry height="48" width="48" x="80" y="20" as="geometry" />
+        <mxCell id="node_ui" parent="tier_client" style="rounded=1;fillColor=#FFFFFF;strokeColor=#CBD5E1;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="WinForms UI&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#64748B;&quot;&gt;Host Explorer&lt;/span&gt;" vertex="1">
+          <mxGeometry height="45" width="170" x="40" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="node_term" parent="admin_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/code/v6/24px.svg;" value="xterm.js" vertex="1">
-          <mxGeometry height="48" width="48" x="295" y="20" as="geometry" />
+        <mxCell id="node_xterm" parent="tier_client" style="rounded=1;fillColor=#FFFFFF;strokeColor=#CBD5E1;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="xterm.js Terminal&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#64748B;&quot;&gt;WebView2 Shell&lt;/span&gt;" vertex="1">
+          <mxGeometry height="45" width="180" x="270" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="node_client_auth" parent="admin_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/keycloak.svg;" value="Keycloak" vertex="1">
-          <mxGeometry height="48" width="48" x="525" y="20" as="geometry" />
+        <mxCell id="node_client_auth" parent="tier_client" style="rounded=1;fillColor=#FFFFFF;strokeColor=#CBD5E1;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="OIDC Client&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#64748B;&quot;&gt;Token Auth&lt;/span&gt;" vertex="1">
+          <mxGeometry height="45" width="170" x="510" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="cloud_box" parent="1" style="rounded=1;fillColor=#f0f7ff;strokeColor=#0969da;strokeWidth=1.5;fontStyle=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;fontColor=#0969da;whiteSpace=wrap;html=1;" value="CLOUD (.NET ASPIRE)" vertex="1">
-          <mxGeometry height="230" width="680" x="40" y="145" as="geometry" />
+        <mxCell id="tier_logic" parent="1" style="swimlane;startSize=26;fillColor=#EFF6FF;strokeColor=#3B82F6;rounded=1;fontStyle=1;fontSize=11;fontColor=#1D4ED8;whiteSpace=wrap;html=1;" value="TIER 2: CONTROL &amp;amp; LOGIC LAYER (.NET Aspire &amp;amp; NetOps.Server)" vertex="1">
+          <mxGeometry height="135" width="720" x="40" y="135" as="geometry" />
         </mxCell>
-        <mxCell id="node_api" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/dns/v6/24px.svg;" value="Web API" vertex="1">
-          <mxGeometry height="48" width="48" x="80" y="30" as="geometry" />
+        <mxCell id="node_api" parent="tier_logic" style="rounded=1;fillColor=#FFFFFF;strokeColor=#93C5FD;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="Web API &amp;amp; OpenAPI&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#2563EB;&quot;&gt;REST Endpoints&lt;/span&gt;" vertex="1">
+          <mxGeometry height="40" width="140" x="30" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="node_mq" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/rabbitmq.svg;" value="RabbitMQ" vertex="1">
-          <mxGeometry height="48" width="48" x="295" y="30" as="geometry" />
+        <mxCell id="node_agenthub" parent="tier_logic" style="rounded=1;fillColor=#FFFFFF;strokeColor=#93C5FD;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="AgentHub gRPC&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#2563EB;&quot;&gt;Bi-directional Stream&lt;/span&gt;" vertex="1">
+          <mxGeometry height="40" width="140" x="200" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="node_keycloak" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/keycloak.svg;" value="Keycloak" vertex="1">
-          <mxGeometry height="48" width="48" x="525" y="30" as="geometry" />
+        <mxCell id="node_conn_mgr" parent="tier_logic" style="rounded=1;fillColor=#FFFFFF;strokeColor=#93C5FD;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="Connection Manager&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#2563EB;&quot;&gt;ConcurrentDictionary&lt;/span&gt;" vertex="1">
+          <mxGeometry height="40" width="150" x="370" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="node_prom" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/prometheus.svg;" value="Prometheus" vertex="1">
-          <mxGeometry height="48" width="48" x="80" y="145" as="geometry" />
+        <mxCell id="node_agentless_svc" parent="tier_logic" style="rounded=1;fillColor=#FFFFFF;strokeColor=#93C5FD;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="SSH / WinRM Service&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#2563EB;&quot;&gt;Direct Remote Exec&lt;/span&gt;" vertex="1">
+          <mxGeometry height="40" width="140" x="550" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="node_grpc" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/sync_alt/v6/24px.svg;" value="gRPC Hub" vertex="1">
-          <mxGeometry height="48" width="48" x="295" y="145" as="geometry" />
+        <mxCell id="node_aspire" parent="tier_logic" style="rounded=1;fillColor=#DBEAFE;strokeColor=#60A5FA;strokeWidth=1.2;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="Aspire AppHost&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#2563EB;&quot;&gt;Container Infra&lt;/span&gt;" vertex="1">
+          <mxGeometry height="38" width="140" x="30" y="85" as="geometry" />
         </mxCell>
-        <mxCell id="node_ssh_winrm" parent="cloud_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/vpn_key/v6/24px.svg;" value="SSH / WinRM" vertex="1">
-          <mxGeometry height="48" width="48" x="525" y="145" as="geometry" />
+        <mxCell id="node_consumer" parent="tier_logic" style="rounded=1;fillColor=#DBEAFE;strokeColor=#60A5FA;strokeWidth=1.2;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="MassTransit Consumer&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#2563EB;&quot;&gt;Command Dispatcher&lt;/span&gt;" vertex="1">
+          <mxGeometry height="38" width="160" x="280" y="85" as="geometry" />
         </mxCell>
-        <mxCell id="nat_box" parent="1" style="rounded=1;fillColor=#fcf8ff;strokeColor=#8250df;strokeWidth=1.5;fontStyle=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;fontColor=#8250df;whiteSpace=wrap;html=1;" value="PRIVATE HOSTS (NAT)" vertex="1">
-          <mxGeometry height="130" width="420" x="40" y="410" as="geometry" />
+        <mxCell id="tier_data" parent="1" style="swimlane;startSize=26;fillColor=#ECFDF5;strokeColor=#10B981;rounded=1;fontStyle=1;fontSize=11;fontColor=#047857;whiteSpace=wrap;html=1;" value="TIER 3: BACKING SERVICES &amp;amp; DATA LAYER (Aspire Containers)" vertex="1">
+          <mxGeometry height="95" width="720" x="40" y="290" as="geometry" />
         </mxCell>
-        <mxCell id="node_otel" parent="nat_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/insights/v6/24px.svg;" value="OTel" vertex="1">
-          <mxGeometry height="48" width="48" x="80" y="20" as="geometry" />
+        <mxCell id="node_rabbitmq" parent="tier_data" style="rounded=1;fillColor=#FFFFFF;strokeColor=#6EE7B7;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="RabbitMQ&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#059669;&quot;&gt;Command Queue&lt;/span&gt;" vertex="1">
+          <mxGeometry height="45" width="160" x="60" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="node_agent" parent="nat_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=https://fonts.gstatic.com/s/i/materialicons/bolt/v6/24px.svg;" value="Agent (AOT)" vertex="1">
-          <mxGeometry height="48" width="48" x="295" y="20" as="geometry" />
+        <mxCell id="node_keycloak" parent="tier_data" style="rounded=1;fillColor=#FFFFFF;strokeColor=#6EE7B7;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="Keycloak&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#059669;&quot;&gt;IAM &amp;amp; RBAC Auth&lt;/span&gt;" vertex="1">
+          <mxGeometry height="45" width="160" x="280" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="direct_box" parent="1" style="rounded=1;fillColor=#f6f8fa;strokeColor=#8c959f;strokeWidth=1.5;fontStyle=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;fontColor=#57606a;whiteSpace=wrap;html=1;" value="AGENTLESS HOSTS" vertex="1">
-          <mxGeometry height="130" width="240" x="480" y="410" as="geometry" />
+        <mxCell id="node_prometheus" parent="tier_data" style="rounded=1;fillColor=#FFFFFF;strokeColor=#6EE7B7;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="Prometheus&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#059669;&quot;&gt;Metrics DB &amp;amp; PromQL&lt;/span&gt;" vertex="1">
+          <mxGeometry height="45" width="160" x="500" y="35" as="geometry" />
         </mxCell>
-        <mxCell id="node_linux" parent="direct_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/linux.svg;" value="Linux" vertex="1">
-          <mxGeometry height="48" width="48" x="30" y="20" as="geometry" />
+        <mxCell id="tier_infra" parent="1" style="swimlane;startSize=26;fillColor=#FAF5FF;strokeColor=#A855F7;rounded=1;fontStyle=1;fontSize=11;fontColor=#6B21A8;whiteSpace=wrap;html=1;" value="TIER 4: TARGET INFRASTRUCTURE LAYER (Managed Endpoints)" vertex="1">
+          <mxGeometry height="145" width="720" x="40" y="405" as="geometry" />
         </mxCell>
-        <mxCell id="node_win" parent="direct_box" style="image;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11;fontStyle=1;fontColor=#1f2328;image=img/lib/modern_tech/windows.svg;" value="Windows" vertex="1">
-          <mxGeometry height="48" width="48" x="145" y="20" as="geometry" />
+        <mxCell id="sub_agent" parent="tier_infra" style="swimlane;startSize=22;fillColor=#F3E8FF;strokeColor=#C084FC;rounded=1;fontStyle=1;fontSize=10;fontColor=#7E22CE;whiteSpace=wrap;html=1;" value="Private Hosts (Agent Mode via NAT)" vertex="1">
+          <mxGeometry height="98" width="410" x="20" y="32" as="geometry" />
         </mxCell>
-        <mxCell id="e1" edge="1" parent="1" source="node_ui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_api" value="REST">
+        <mxCell id="node_agent" parent="sub_agent" style="rounded=1;fillColor=#FFFFFF;strokeColor=#D8B4FE;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="NetOps.Agent&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#7E22CE;&quot;&gt;Native AOT Core&lt;/span&gt;" vertex="1">
+          <mxGeometry height="52" width="110" x="20" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="node_executor" parent="sub_agent" style="rounded=1;fillColor=#FFFFFF;strokeColor=#D8B4FE;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="Shell Executor&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#7E22CE;&quot;&gt;Bash / PowerShell&lt;/span&gt;" vertex="1">
+          <mxGeometry height="52" width="120" x="150" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="node_otel" parent="sub_agent" style="rounded=1;fillColor=#FFFFFF;strokeColor=#D8B4FE;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="OTel Exporter&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#7E22CE;&quot;&gt;Host Telemetry&lt;/span&gt;" vertex="1">
+          <mxGeometry height="52" width="100" x="290" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sub_agentless" parent="tier_infra" style="swimlane;startSize=22;fillColor=#F1F5F9;strokeColor=#CBD5E1;rounded=1;fontStyle=1;fontSize=10;fontColor=#475569;whiteSpace=wrap;html=1;" value="Direct Hosts (Agentless Mode)" vertex="1">
+          <mxGeometry height="98" width="250" x="450" y="32" as="geometry" />
+        </mxCell>
+        <mxCell id="node_linux" parent="sub_agentless" style="rounded=1;fillColor=#FFFFFF;strokeColor=#94A3B8;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="Linux Host&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#475569;&quot;&gt;SSH: Port 22&lt;/span&gt;" vertex="1">
+          <mxGeometry height="52" width="100" x="20" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="node_win" parent="sub_agentless" style="rounded=1;fillColor=#FFFFFF;strokeColor=#94A3B8;strokeWidth=1.5;fontSize=10;fontStyle=1;fontColor=#1E293B;align=center;verticalAlign=middle;whiteSpace=wrap;html=1;" value="Windows Host&lt;br&gt;&lt;span style=&quot;font-size:9px;color:#475569;&quot;&gt;WinRM: 5985&lt;/span&gt;" vertex="1">
+          <mxGeometry height="52" width="100" x="130" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="node_ui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#334155;fontSize=9;fontColor=#475569;exitX=0.5;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_api" value="REST">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e2" edge="1" parent="1" source="node_api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_prom" value="PromQL">
+        <mxCell id="e2" edge="1" parent="1" source="node_xterm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#334155;fontSize=9;fontColor=#475569;exitX=0.5;exitY=1;entryX=0.7;entryY=0;html=1;" target="node_api" value="Stream">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e3" edge="1" parent="1" source="node_otel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=0;entryX=0.5;entryY=1;strokeColor=#1a7f37;strokeWidth=2;html=1;" target="node_prom" value="OTLP">
+        <mxCell id="e3" edge="1" parent="1" source="node_client_auth" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#DC2626;fontSize=9;fontColor=#B91C1C;exitX=0.5;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_keycloak" value="OAuth2 / OIDC">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e4" edge="1" parent="1" source="node_term" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_mq" value="Shell">
+        <mxCell id="e4" edge="1" parent="1" source="node_api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#2563EB;fontSize=9;fontColor=#1D4ED8;exitX=0.5;exitY=1;entryX=0.3;entryY=0;html=1;" target="node_rabbitmq" value="Enqueue Cmd">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e5" edge="1" parent="1" source="node_mq" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_grpc" value="Stream">
+        <mxCell id="e5" edge="1" parent="1" source="node_rabbitmq" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#2563EB;fontSize=9;fontColor=#1D4ED8;exitX=0.7;exitY=0;entryX=0.3;entryY=1;html=1;" target="node_consumer" value="Consume">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e6" edge="1" parent="1" source="node_agent" style="edgeStyle=orthogonalEdgeStyle;rounded=1;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=0;entryX=0.5;entryY=1;strokeColor=#8250df;strokeWidth=2.5;html=1;" target="node_grpc" value="Reverse gRPC">
+        <mxCell id="e6" edge="1" parent="1" source="node_consumer" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#2563EB;fontSize=9;fontColor=#1D4ED8;exitX=0.8;exitY=0;entryX=0.5;entryY=1;html=1;" target="node_conn_mgr" value="Lookup Stream">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e7" edge="1" parent="1" source="node_client_auth" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#cf222e;html=1;" target="node_keycloak" value="OIDC">
+        <mxCell id="e7" edge="1" parent="1" source="node_conn_mgr" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#2563EB;fontSize=9;fontColor=#1D4ED8;exitX=0;exitY=0.5;entryX=1;entryY=0.5;html=1;" target="node_agenthub" value="Write">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e8" edge="1" parent="1" source="node_keycloak" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;fontSize=10;fontColor=#57606a;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#cf222e;html=1;" target="node_ssh_winrm" value="RBAC">
+        <mxCell id="e8" edge="1" parent="1" source="node_agent" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2.5;strokeColor=#7C3AED;fontSize=9;fontColor=#6D28D9;exitX=0.5;exitY=0;entryX=0.5;entryY=1;html=1;" target="node_agenthub" value="Reverse gRPC Stream">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e9" edge="1" parent="1" source="node_ssh_winrm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeWidth=1.5;strokeColor=#6e7781;fontSize=10;fontColor=#57606a;exitX=0.25;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_linux" value="SSH:22">
+        <mxCell id="e9" edge="1" parent="1" source="node_agentless_svc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeWidth=1.5;strokeColor=#64748B;fontSize=9;fontColor=#475569;exitX=0.3;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_linux" value="SSH:22">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e10" edge="1" parent="1" source="node_ssh_winrm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeWidth=1.5;strokeColor=#6e7781;fontSize=10;fontColor=#57606a;exitX=0.75;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_win" value="WinRM:5985">
+        <mxCell id="e10" edge="1" parent="1" source="node_agentless_svc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;strokeWidth=1.5;strokeColor=#64748B;fontSize=9;fontColor=#475569;exitX=0.7;exitY=1;entryX=0.5;entryY=0;html=1;" target="node_win" value="WinRM:5985">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e11" edge="1" parent="1" source="node_api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=1;exitY=0.5;entryX=0;entryY=0.5;html=1;" target="node_mq" value="Enqueue">
+        <mxCell id="e11" edge="1" parent="1" source="node_otel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#059669;fontSize=9;fontColor=#047857;exitX=0.5;exitY=0;entryX=0.3;entryY=1;html=1;" target="node_prometheus" value="OTLP Metrics">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e12" edge="1" parent="1" source="node_mq" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#24292f;fontSize=10;fontColor=#57606a;exitX=1;exitY=0.5;entryX=0;entryY=0.3;html=1;" target="node_ssh_winrm" value="Agentless">
+        <mxCell id="e12" edge="1" parent="1" source="node_api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#059669;fontSize=9;fontColor=#047857;exitX=0.9;exitY=1;entryX=0.8;entryY=0;html=1;" target="node_prometheus" value="PromQL Query">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="node_agent" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1.5;strokeColor=#7C3AED;fontSize=9;fontColor=#6D28D9;exitX=1;exitY=0.5;entryX=0;entryY=0.5;html=1;" target="node_executor" value="Execute">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
