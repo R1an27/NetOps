@@ -1,5 +1,6 @@
 ﻿// Namespace chứa các class xử lý mạng cấp cao trong .NET (như DNS, HTTP, địa chỉ IP)
 // Để dùng class Dns
+using NetOps.Shared;
 using System.Net;
 // Chứa các công cụ tầng mạng Socket (TCP, UDP và các giao thức mạng khác).
 // Để dùng được bảng phân loại AddressFamily (AddressFamily.InterNetwork - ma
@@ -35,6 +36,45 @@ public static class SystemInfoService
                   .AddressList
                   .First(a => a.AddressFamily == AddressFamily.InterNetwork)
                   .ToString();
+    }
+
+    // Lấy số nhân CPU
+    public static int GetCpuCores()
+    {
+        return Environment.ProcessorCount;
+    }
+
+    // 5. Lấy tổng dung lượng RAM (đơn vị Bytes)
+    // GB đổi ra bytes rất lớn nên dùng long là hợp lý
+    public static long GetTotalMemoryBytes()
+    {
+        return GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+    }
+
+    public static double GetTotalMemoryGb()
+    {
+        return GetTotalMemoryBytes() / (1024.0 * 1024 * 1024);
+    }
+
+    // 6. Lấy hoặc tạo Agent ID
+    public static string GetAgentId()
+    {
+        // Tạo một mã định danh ngẫu nhiên, ví dụ: "agent-a1b2c3d4..."
+        return $"agent-{Guid.NewGuid():N}";
+    }
+
+    // Hàm đóng gói toàn bộ thông tin máy tính để sẵn sàng gửi qua gRPC
+    public static RegisterAgentRequest GetRegistrationInfo()
+    {
+        return new RegisterAgentRequest
+        {
+            AgentId = GetAgentId(),
+            Hostname = GetHostName(),
+            IpAddress = GetLocalIpAddress(),
+            OsDescription = GetOsDescription(),
+            CpuCores = GetCpuCores(),
+            TotalMemoryBytes = GetTotalMemoryBytes()
+        };
     }
 
 }
