@@ -13,7 +13,7 @@ namespace NetOps.Server.Extensions
         public static IServiceCollection AddRabbitMqMassTransit(this IServiceCollection services, IConfiguration configuration)
         {
             services.AddMassTransit(x =>
-            {
+            { 
                 // 1. Đăng ký Consumer
                 x.AddConsumer<CommandConsumer>();
 
