@@ -1,4 +1,4 @@
-// Phiên bản cú pháp Protobuf
+﻿// Phiên bản cú pháp Protobuf
 syntax = "proto3";
 
 // Chỉ thị cho compiler protoc đặt toàn bộ mã C# sinh ra vào namespace NetOps.Shared
@@ -21,7 +21,6 @@ message AgentMessage {
     RegisterAgentRequest register_request = 1;
     HeartbeatMessage heartbeat = 2;
     ShellOutputChunk shell_output = 3;
-    CommandOutput command_output = 4; // Kết quả thực thi lệnh từ Agent Executor
   }
 }
 
@@ -57,7 +56,6 @@ message ServerMessage {
   oneof payload {
     RegisterAgentResponse register_response = 1;
     ShellCommandRequest shell_command = 2;
-    CommandRequest command_request = 3; // Lệnh từ MassTransit Consumer
   }
 }
 
@@ -73,20 +71,4 @@ message ShellCommandRequest {
   string command = 2;
   string working_directory = 3;
   int32 timeout_seconds = 4;
-}
-
-// Lệnh điều khiển từ RabbitMQ Consumer gửi xuống Agent
-message CommandRequest {
-  string command_id = 1;
-  string command_text = 2;
-  string shell_type = 3;
-  int32 timeout_seconds = 4;
-}
-
-// Kết quả thực thi lệnh trả ngược từ Agent về Server
-message CommandOutput {
-  string agent_id = 1;
-  string command_id = 2;
-  string output_line = 3;
-  bool is_error = 4;
 }

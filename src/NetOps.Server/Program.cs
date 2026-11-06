@@ -1,6 +1,4 @@
 using NetOps.Server.Services;
-using NetOps.Server.Extensions;
-using NetOps.Server.Services.Agentless;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,12 +10,6 @@ builder.Services.AddOpenApi();
 builder.Services.AddGrpc();
 // Đăng ký cuốn danh bạ hoạt động xuyên suốt vòng đời của Server
 builder.Services.AddSingleton<AgentConnectionManager>();
-
-// Kích hoạt RabbitMQ & MassTransit
-builder.Services.AddRabbitMqMassTransit(builder.Configuration);
-
-// Đăng ký module Agentless (SSH)
-builder.Services.AddSingleton<SshCommandService>();
 
 var app = builder.Build();
 
