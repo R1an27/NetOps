@@ -11,6 +11,10 @@ var commandExecutor = new CommandExecutor(executorLogger);
 var info = SystemInfoService.GetRegistrationInfo();
 Console.WriteLine($"Đã đóng gói thành công máy: {info.Hostname} (ID: {info.AgentId})");
 
+// Khởi tạo và giữ bộ phát OTel hoạt động suốt vòng đời Agent
+using var metricsProvider = MetricsExportService.InitMetrics(info.AgentId, info.Hostname);
+Console.WriteLine("Đã kích hoạt OpenTelemetry Metrics Exporter thành công!");
+
 using var channel = GrpcChannel.ForAddress("https://localhost:7027");
 var client = new AgentHub.AgentHubClient(channel);
 Console.WriteLine("Đã tạo gRPC Client thành công");
