@@ -446,7 +446,7 @@ app.MapGet("/api/metrics/{agentId}/latest", async (string agentId, IHttpClientFa
     var client = clientFactory.CreateClient("Prometheus");
 
     // Tạo câu truy vấn PromQL lọc theo agentId
-    string query = $"system_cpu_utilization{{host_id=\"{agentId}\"}}";
+    string query = $"system_cpu_utilization_percent{{host_id=\"{agentId}\"}}";
     string url = $"/api/v1/query?query={Uri.EscapeDataString(query)}";
 
     // Gọi Prometheus
@@ -509,7 +509,7 @@ app.MapGet("/api/hosts/{agentId}/metrics/summary", async (string agentId, IHttpC
     }
 
     // Truy vấn song song cả 3 chỉ số từ Prometheus
-    var cpuTask = QueryPrometheusMetricAsync("system_cpu_utilization");
+    var cpuTask = QueryPrometheusMetricAsync("system_cpu_utilization_percent");
     var memTask = QueryPrometheusMetricAsync("system_memory_used_bytes");
     var diskTask = QueryPrometheusMetricAsync("system_disk_free_bytes");
 
