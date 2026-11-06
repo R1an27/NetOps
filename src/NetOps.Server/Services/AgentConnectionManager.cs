@@ -115,6 +115,17 @@ public class AgentConnectionManager
     }
 
     /// <summary>
+    /// Trả về luồng gRPC stream của Agent theo Id (dùng cho CommandConsumer của MassTransit)
+    /// </summary>
+    public IServerStreamWriter<ServerMessage>? GetConnection(string agentId)
+    {
+        if (_connections.TryGetValue(agentId, out var connection))
+        {
+            return connection.ResponseStream;
+        }
+        return null;
+    }
+    /// <summary>
     /// Lấy danh sách toàn bộ các Agent đang Online
     /// </summary>
     public IReadOnlyCollection<AgentConnection> GetAllConnections()
