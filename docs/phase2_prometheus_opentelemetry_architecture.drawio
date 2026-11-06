@@ -1,0 +1,179 @@
+<mxfile host="localhost">
+  <diagram id="netops-phase2-otel-prom" name="Phase 2 - Prometheus &amp; OpenTelemetry">
+    <mxGraphModel dx="1200" dy="650" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- COL 1: NETOPS.AGENT -->
+        <mxCell id="col_agent" parent="1" style="swimlane;startSize=26;fontStyle=1;fontSize=11;fillColor=#f8f9fa;strokeColor=#0284c7;rounded=1;arcSize=4;whiteSpace=wrap;html=1;" value="1. NetOps.Agent (Metrics Collection &amp; OTLP Push)" vertex="1">
+          <mxGeometry height="510" width="280" x="20" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="box_instruments" parent="col_agent" style="rounded=1;whiteSpace=wrap;fillColor=#f0f9ff;strokeColor=#0284c7;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;System Resource Instruments&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• &lt;b&gt;CPU (%):&lt;/b&gt; Process TotalProcessorTime delta&lt;br&gt;• &lt;b&gt;RAM (Bytes):&lt;/b&gt; GC.GetGCMemoryInfo()&lt;br&gt;• &lt;b&gt;Disk (Bytes):&lt;/b&gt; DriveInfo.AvailableFreeSpace&lt;br&gt;• CreateObservableGauge (Async pull)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="100" width="250" x="15" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_instruments" parent="col_agent" style="image;aspect=fixed;image=img/lib/azure2/general/Code.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_provider" parent="col_agent" style="rounded=1;whiteSpace=wrap;fillColor=#eff6fc;strokeColor=#2563eb;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;OpenTelemetry MeterProvider&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• &lt;b&gt;Meter:&lt;/b&gt; &quot;NetOps.Agent&quot; v1.0.0&lt;br&gt;• &lt;b&gt;Resource Attributes (CCCD):&lt;/b&gt;&lt;br&gt;&amp;nbsp;&amp;nbsp;- host.id = &quot;agent-xxxx&quot;&lt;br&gt;&amp;nbsp;&amp;nbsp;- host.name = &quot;DESKTOP-ABC&quot;&lt;br&gt;&amp;nbsp;&amp;nbsp;- service.name = &quot;NetOps.Agent&quot;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="105" width="250" x="15" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_provider" parent="col_agent" style="image;aspect=fixed;image=img/lib/azure2/management_governance/Diagnostics_Settings.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="195" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_otlp_exporter" parent="col_agent" style="rounded=1;whiteSpace=wrap;fillColor=#f0fdf4;strokeColor=#16a34a;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;OtlpHttpExporter (Protobuf Push)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• &lt;b&gt;Endpoint:&lt;/b&gt; http://localhost:9090/api/v1/otlp&lt;br&gt;• &lt;b&gt;Protocol:&lt;/b&gt; OtlpExportProtocol.HttpProtobuf&lt;br&gt;• &lt;b&gt;Interval:&lt;/b&gt; 5000ms (Periodic push mỗi 5s)&lt;br&gt;• Auto appends &quot;/v1/metrics&quot; path&lt;/font&gt;" vertex="1">
+          <mxGeometry height="100" width="250" x="15" y="285" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_exporter" parent="col_agent" style="image;aspect=fixed;image=img/lib/azure2/networking/Connections.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="315" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_agent_runtime" parent="col_agent" style="rounded=1;whiteSpace=wrap;fillColor=#faf5ff;strokeColor=#7c3aed;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;Lifecycle Management&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• using var metricsProvider in Program.cs&lt;br&gt;• Background collector sống cùng Agent&lt;br&gt;• Graceful flush &amp;amp; dispose on exit&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="250" x="15" y="405" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_runtime" parent="col_agent" style="shape=mxgraph.basic.tick;fillColor=#7c3aed;strokeColor=none;whiteSpace=wrap;html=1;" vertex="1">
+          <mxGeometry height="30" width="30" x="25" y="430" as="geometry" />
+        </mxCell>
+
+        <!-- COL 2: PROMETHEUS TSDB -->
+        <mxCell id="col_prom" parent="1" style="swimlane;startSize=26;fontStyle=1;fontSize=11;fillColor=#f8f9fa;strokeColor=#ea580c;rounded=1;arcSize=4;whiteSpace=wrap;html=1;" value="2. Prometheus TSDB (.NET Aspire Container)" vertex="1">
+          <mxGeometry height="510" width="280" x="325" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="box_apphost" parent="col_prom" style="rounded=1;whiteSpace=wrap;fillColor=#fff7ed;strokeColor=#ea580c;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;NetOps.AppHost (Aspire v3.0)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• Image: &lt;b&gt;prom/prometheus:v3.0.0&lt;/b&gt;&lt;br&gt;• Port binding: &lt;b&gt;9090:9090&lt;/b&gt;&lt;br&gt;• WithReference(prometheus) sang Server&lt;/font&gt;" vertex="1">
+          <mxGeometry height="85" width="250" x="15" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_apphost" parent="col_prom" style="image;aspect=fixed;image=img/lib/azure2/containers/Container_Instances.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_otlp_receiver" parent="col_prom" style="rounded=1;whiteSpace=wrap;fillColor=#fefce8;strokeColor=#ca8a04;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;OTLP Native Write Receiver&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• &lt;b&gt;Flag:&lt;/b&gt; --web.enable-otlp-receiver&lt;br&gt;• Ingest endpoint: /api/v1/otlp/v1/metrics&lt;br&gt;• Biến đổi Resource Attributes thành&lt;br&gt;&amp;nbsp;&amp;nbsp;metadata label: target_info&lt;br&gt;• Tự gắn unit suffix: _percent, _bytes&lt;/font&gt;" vertex="1">
+          <mxGeometry height="110" width="250" x="15" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_receiver" parent="col_prom" style="shape=mxgraph.networks.comm_link;fillColor=#ca8a04;strokeColor=none;whiteSpace=wrap;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="185" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_tsdb" parent="col_prom" style="rounded=1;whiteSpace=wrap;fillColor=#fdf4ff;strokeColor=#c026d3;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;Time-Series Storage &amp;amp; Index&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• Volume: /prometheus (TSDB blocks)&lt;br&gt;• Time-series vectors:&lt;br&gt;&amp;nbsp;&amp;nbsp;- &lt;b&gt;system_cpu_utilization_percent&lt;/b&gt;&lt;br&gt;&amp;nbsp;&amp;nbsp;- &lt;b&gt;system_memory_used_bytes&lt;/b&gt;&lt;br&gt;&amp;nbsp;&amp;nbsp;- &lt;b&gt;system_disk_free_bytes&lt;/b&gt;&lt;br&gt;• Compressed in-memory &amp;amp; disk chunks&lt;/font&gt;" vertex="1">
+          <mxGeometry height="120" width="250" x="15" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_tsdb" parent="col_prom" style="shape=mxgraph.networks.storage;fillColor=#c026d3;strokeColor=none;whiteSpace=wrap;html=1;" vertex="1">
+          <mxGeometry height="38" width="38" x="25" y="320" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_prom_api" parent="col_prom" style="rounded=1;whiteSpace=wrap;fillColor=#f0fdf4;strokeColor=#16a34a;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;PromQL HTTP API (Cổng 9090)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• Instant Query: GET /api/v1/query&lt;br&gt;• Filters: {host_id=&quot;...&quot;}&lt;br&gt;• Prom Web UI: http://localhost:9090&lt;/font&gt;" vertex="1">
+          <mxGeometry height="75" width="250" x="15" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_prom_api" parent="col_prom" style="image;aspect=fixed;image=img/lib/azure2/general/Browser.svg;html=1;" vertex="1">
+          <mxGeometry height="32" width="32" x="25" y="440" as="geometry" />
+        </mxCell>
+
+        <!-- COL 3: NETOPS.SERVER -->
+        <mxCell id="col_server" parent="1" style="swimlane;startSize=26;fontStyle=1;fontSize=11;fillColor=#f8f9fa;strokeColor=#7c3aed;rounded=1;arcSize=4;whiteSpace=wrap;html=1;" value="3. NetOps.Server (PromQL Gateway &amp; REST API)" vertex="1">
+          <mxGeometry height="510" width="280" x="630" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="box_server_http" parent="col_server" style="rounded=1;whiteSpace=wrap;fillColor=#f5f3ff;strokeColor=#7c3aed;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;AddHttpClient(&quot;Prometheus&quot;)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• BaseAddress: http://localhost:9090&lt;br&gt;• Dependency Injection trong Program.cs&lt;br&gt;• IHttpClientFactory quản lý connection pool&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="250" x="15" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_server_http" parent="col_server" style="shape=mxgraph.networks.server;fillColor=#7c3aed;strokeColor=none;whiteSpace=wrap;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_parallel_query" parent="col_server" style="rounded=1;whiteSpace=wrap;fillColor=#faf5ff;strokeColor=#9333ea;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;QueryPrometheusMetricAsync&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• Escaped PromQL query string&lt;br&gt;• Task.WhenAll(cpu, mem, disk)&lt;br&gt;&amp;nbsp;&amp;nbsp;Truy vấn song song cực nhanh&lt;br&gt;• Bóc nắp JSON: data.result[0].value[1]&lt;br&gt;• Parse an toàn với InvariantCulture&lt;/font&gt;" vertex="1">
+          <mxGeometry height="110" width="250" x="15" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_query" parent="col_server" style="image;aspect=fixed;image=img/lib/azure2/databases/Data_Lake.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="180" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_dto" parent="col_server" style="rounded=1;whiteSpace=wrap;fillColor=#fefce8;strokeColor=#ca8a04;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;HostMetricsSummaryDto&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• record C# tinh gọn dành cho Client&lt;br&gt;• AgentId, CpuPercent, MemoryUsedBytes,&lt;br&gt;&amp;nbsp;&amp;nbsp;DiskFreeBytes, Timestamp (UTC)&lt;br&gt;• Loại bỏ dữ liệu rác/thô của Prometheus&lt;/font&gt;" vertex="1">
+          <mxGeometry height="95" width="250" x="15" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_dto" parent="col_server" style="image;aspect=fixed;image=img/lib/azure2/general/File.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="310" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_server_endpoint" parent="col_server" style="rounded=1;whiteSpace=wrap;fillColor=#f0fdf4;strokeColor=#16a34a;align=left;spacingLeft=50;html=1;" value="&lt;b&gt;Minimal API Endpoint&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• &lt;b&gt;GET /api/hosts/{agentId}/metrics/summary&lt;/b&gt;&lt;br&gt;• Trả về HTTP 200 OK kèm DTO JSON&lt;br&gt;• Sẵn sàng phục vụ NetOps.Desktop UI&lt;/font&gt;" vertex="1">
+          <mxGeometry height="85" width="250" x="15" y="400" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_endpoint" parent="col_server" style="image;aspect=fixed;image=img/lib/azure2/app_services/API_Management_Services.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="25" y="425" as="geometry" />
+        </mxCell>
+
+        <!-- COL 4: NETOPS.DESKTOP CONSUMER -->
+        <mxCell id="col_desktop" parent="1" style="swimlane;startSize=26;fontStyle=1;fontSize=11;fillColor=#f8f9fa;strokeColor=#16a34a;rounded=1;arcSize=4;whiteSpace=wrap;html=1;" value="4. NetOps.Desktop (Client Layer)" vertex="1">
+          <mxGeometry height="510" width="220" x="935" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="box_client_call" parent="col_desktop" style="rounded=1;whiteSpace=wrap;fillColor=#f0fdf4;strokeColor=#16a34a;align=left;spacingLeft=45;html=1;" value="&lt;b&gt;Desktop Client Polling&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• Định kỳ gọi REST API Server&lt;br&gt;• GET /api/hosts/.../summary&lt;br&gt;• Không cần kết nối trực tiếp TSDB&lt;/font&gt;" vertex="1">
+          <mxGeometry height="85" width="190" x="15" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_client" parent="col_desktop" style="image;aspect=fixed;image=img/lib/azure2/general/Mobile.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="20" y="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_dashboard" parent="col_desktop" style="rounded=1;whiteSpace=wrap;fillColor=#eff6fc;strokeColor=#2563eb;align=left;spacingLeft=45;html=1;" value="&lt;b&gt;Visualized Dashboard&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• Đồng hồ CPU Gauge (%)&lt;br&gt;• Thanh đo RAM (Used/Total)&lt;br&gt;• Ổ đĩa Disk Free Space&lt;br&gt;• Biểu đồ đường (Line Chart)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="110" width="190" x="15" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_dashboard" parent="col_desktop" style="image;aspect=fixed;image=img/lib/azure2/analytics/Power_BI_Embedded.svg;html=1;" vertex="1">
+          <mxGeometry height="35" width="35" x="20" y="195" as="geometry" />
+        </mxCell>
+
+        <mxCell id="box_benefit" parent="col_desktop" style="rounded=1;whiteSpace=wrap;fillColor=#fff7ed;strokeColor=#ea580c;align=left;spacingLeft=45;html=1;" value="&lt;b&gt;Security &amp;amp; Isolation&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;• CSDL Prometheus được bảo vệ sau Server Gateway&lt;br&gt;• Desktop chỉ nhận JSON sạch&lt;br&gt;• Tải nhẹ, UI mượt mà&lt;/font&gt;" vertex="1">
+          <mxGeometry height="100" width="190" x="15" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_benefit" parent="col_desktop" style="shape=mxgraph.basic.lock;fillColor=#ea580c;strokeColor=none;whiteSpace=wrap;html=1;" vertex="1">
+          <mxGeometry height="30" width="30" x="22" y="335" as="geometry" />
+        </mxCell>
+
+        <!-- EDGES BETWEEN COMPONENTS -->
+        <!-- Agent Instruments -> OTel Provider -->
+        <mxCell id="e_inst_to_provider" edge="1" parent="1" source="box_instruments" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#0284c7;strokeWidth=1.5;html=1;" target="box_provider" value="ObservableGauge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- OTel Provider -> OTLP Exporter -->
+        <mxCell id="e_provider_to_exporter" edge="1" parent="1" source="box_provider" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#2563eb;strokeWidth=1.5;html=1;" target="box_otlp_exporter" value="PeriodicExporting (5s)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Agent Exporter -> Prometheus Receiver (CROSS-SWIMLANE PUSH) -->
+        <mxCell id="e_otlp_push" edge="1" parent="1" source="box_otlp_exporter" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#16a34a;strokeWidth=2.5;html=1;" target="box_otlp_receiver" value="HTTP POST OTLP (Protobuf)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Prometheus Receiver -> TSDB Storage -->
+        <mxCell id="e_receiver_to_tsdb" edge="1" parent="1" source="box_otlp_receiver" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#ca8a04;strokeWidth=1.5;html=1;" target="box_tsdb" value="Vector Indexing">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- TSDB Storage -> Prom HTTP API -->
+        <mxCell id="e_tsdb_to_api" edge="1" parent="1" source="box_tsdb" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#c026d3;strokeWidth=1.5;html=1;" target="box_prom_api" value="Time-Series Chunks">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Server HttpClient -> Prom HTTP API (CROSS-SWIMLANE QUERY) -->
+        <mxCell id="e_server_to_prom" edge="1" parent="1" source="box_parallel_query" style="edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;entryX=1;entryY=0.5;strokeColor=#ea580c;strokeWidth=2;html=1;" target="box_prom_api" value="GET /api/v1/query?query=... (PromQL)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Server Query -> DTO Packaging -->
+        <mxCell id="e_query_to_dto" edge="1" parent="1" source="box_parallel_query" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#9333ea;strokeWidth=1.5;html=1;" target="box_dto" value="Parse value[1] (double)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- DTO Packaging -> Endpoint -->
+        <mxCell id="e_dto_to_endpoint" edge="1" parent="1" source="box_dto" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#ca8a04;strokeWidth=1.5;html=1;" target="box_server_endpoint" value="Results.Ok(summary)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Server Endpoint -> Desktop (CROSS-SWIMLANE RESPONSE) -->
+        <mxCell id="e_endpoint_to_desktop" edge="1" parent="1" source="box_server_endpoint" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#16a34a;strokeWidth=2;html=1;" target="box_dashboard" value="JSON DTO Stream (REST)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+
