@@ -8,4 +8,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+<ItemGroup>
+    <ProjectReference Include="..\NetOps.Shared\NetOps.Shared.csproj" />
+</ItemGroup>
+
+<ItemGroup>
+  <PackageReference Include="AntdUI" Version="2.4.18" />
+  <PackageReference Include="Duende.IdentityModel.OidcClient" Version="7.1.1" />
+  <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.*" />
+  <PackageReference Include="ReaLTaiizor" Version="3.8.2.1" />
+</ItemGroup>
+
+	<ItemGroup>
+		<!--Khai báo project sử dụng một shared framework-->
+		<!--Framework chứa các API ASP.NET Core cần để tạo bộ nhận callback-->
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+
 </Project>
