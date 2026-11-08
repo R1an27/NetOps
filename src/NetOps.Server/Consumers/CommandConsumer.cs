@@ -46,7 +46,7 @@ namespace NetOps.Server.Consumers
                 {
                     CommandId = message.CommandId,
                     CommandText = message.CommandText,
-                    ShellType = message.ShellType,
+                    // Bỏ ShellType, vô dụng vai
                     TimeoutSeconds = message.TimeoutSeconds
                 }
             };

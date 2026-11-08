@@ -79,8 +79,8 @@ message ShellCommandRequest {
 message CommandRequest {
   string command_id = 1;
   string command_text = 2;
-  string shell_type = 3;
-  int32 timeout_seconds = 4;
+  // Bỏ cái trường shelltype rồi nha
+  int32 timeout_seconds = 3;
 }
 
 // Kết quả thực thi lệnh trả ngược từ Agent về Server
@@ -89,4 +89,38 @@ message CommandOutput {
   string command_id = 2;
   string output_line = 3;
   bool is_error = 4;
+
+  // Biến này để kiểm tra Output còn dòng nào không
+  bool is_completed = 5;
+  // Mã kết quả (thành công, lỗi,...); chỉ đọc khi is_completed = true.
+  int32 exit_code = 6;
+}
+
+// [1] API dành cho Desktop gọi tới server.
+service CommandService {
+    rpc SubmitCommand (SubmitCommandRequest)
+    returns (SubmitCommandResponse);
+
+    rpc WatchCommand (WatchCommandRequest)
+    // Từ khoá stream nghĩa là Server có thể trả về nhiều bảng tin trên cùng lời gọi, thay vì chỉ 1 phản hồi
+    returns (stream CommandOutput);
+}
+
+// Dữ liệu Desktop gửi tới server
+message SubmitCommandRequest {
+    string agent_id = 1;
+    string command_text = 2;
+    int32 timeout_seconds = 3;
+
+    string desktop_connection_id = 4;
+}
+
+// Dữ liệu server trả về sau khi tiếp nhận lệnh từ Desktop
+message SubmitCommandResponse {
+    string command_id = 1;
+}
+
+//
+message WatchCommandRequest {
+  string command_id = 1;
 }

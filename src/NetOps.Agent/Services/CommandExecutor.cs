@@ -36,7 +36,10 @@ namespace NetOps.Agent.Services
                 WorkingDirectory = Environment.CurrentDirectory
             };
 
-            if (OperatingSystem.IsWindows() && request.ShellType.Equals("PowerShell", StringComparison.OrdinalIgnoreCase))
+            // Bỏ cái ShellType giùm, có điều kiện OS tự kiểm tra là đủ rồi
+            // Tự dưng server phải chọn ShellType ở đâu ra? Nhập tay hả?
+            // Chưa thấy logic nào để chọn ShellType từ phía server khi gửi lệnh đi cả
+            if (OperatingSystem.IsWindows())
             {
                 psi.FileName = "powershell.exe";
                 // Dùng -NonInteractive và -NoProfile để script chạy ngầm ổn định, không bị treo chờ input
@@ -109,7 +112,9 @@ namespace NetOps.Agent.Services
                             AgentId = agentId,
                             CommandId = commandId,
                             OutputLine = line,
-                            IsError = isError
+                            IsError = isError,
+
+
                         }
                     };
                     await responseStream.WriteAsync(msg);
@@ -126,7 +131,11 @@ namespace NetOps.Agent.Services
                     AgentId = agentId,
                     CommandId = commandId,
                     OutputLine = $"[EXIT CODE: {exitCode}] - {status}",
-                    IsError = exitCode != 0
+                    IsError = exitCode != 0,
+
+                    // Um t thêm 2 trường này vo thoi
+                    IsCompleted = true,
+                    ExitCode = exitCode
                 }
             };
             await responseStream.WriteAsync(msg);
