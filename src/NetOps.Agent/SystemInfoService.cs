@@ -57,10 +57,32 @@ public static class SystemInfoService
     }
 
     // 6. Lấy hoặc tạo Agent ID
+    // Lần đầu chạy: tạo ID và lưu vào agent-id.txt.
+    // Những lần sau: đọc lại ID đã lưu.
+    // Trên Windows, vị trí lưu là %LOCALAPPDATA%\NetOps\Agent\agent-id.txt.
     public static string GetAgentId()
     {
-        // Tạo một mã định danh ngẫu nhiên, ví dụ: "agent-a1b2c3d4..."
-        return $"agent-{Guid.NewGuid():N}";
+        var folder = Path.Combine(
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData),
+            "NetOps", "Agent");
+
+        Directory.CreateDirectory(folder);
+
+        var filePath = Path.Combine(folder, "agent-id.txt");
+
+        if (File.Exists(filePath))
+        {
+            var savedId = File.ReadAllText(filePath).Trim();
+
+            if (!string.IsNullOrWhiteSpace(savedId))
+                return savedId;
+        }
+
+        var agentId = $"agent-{Guid.NewGuid():N}";
+        File.WriteAllText(filePath, agentId);
+
+        return agentId;
     }
 
     // Hàm đóng gói toàn bộ thông tin máy tính để sẵn sàng gửi qua gRPC
