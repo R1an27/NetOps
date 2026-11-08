@@ -3,4 +3,13 @@
 GET {{NetOps.Server_HostAddress}}/weatherforecast/
 Accept: application/json
 
+
+
 ###
+# [3.6] Kiểm tra Server có thực sự từ chối yêu cầu thiếu token
+# Bấm Send Request phía trên dòng POST.
+# Visual Studio sẽ hiện phản hồi bên cạnh.
+# Đây là chức năng có sẵn của trình soạn thảo .http.
+# https://learn.microsoft.com/en-us/aspnet/core/test/http-files?view=aspnetcore-10.0
+# Connect to SignalR without an access token
+POST https://localhost:7027/hubs/netops/negotiate?negotiateVersion=1

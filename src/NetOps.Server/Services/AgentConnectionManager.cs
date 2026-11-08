@@ -1,6 +1,8 @@
-using System.Collections.Concurrent;
 using Grpc.Core;
 using NetOps.Shared;
+using RabbitMQ.Client;
+using System.Collections.Concurrent;
+using static MassTransit.MessageHeaders;
 
 namespace NetOps.Server.Services;
 
@@ -46,10 +48,30 @@ public class AgentConnectionManager
     // Nó hoạt động giống như một cuốn từ điển Dictionary<Key, Value>
     // Key ở đây là 1 chuỗi chứa Id của Agent, Value là object chứa thông tin kết nối của Agent đó
     private readonly ConcurrentDictionary<string, AgentConnection> _connections = new();
+
+    // _connections Kết nối đang hoạt động
+    // _knownAgents Thông tin máy đã từng đăng ký
+    private readonly ConcurrentDictionary<string, RegisterAgentRequest> _knownAgents = new();
+
+    // Tạo biến lưu trữ công cụ ghi log.
     private readonly ILogger<AgentConnectionManager> _logger;
 
+    // Constructor này nhận một đầu vào là một công cụ ghi log
+    // Bên Program.cs đã có AddSingleTon, nó sẽ truyền công cụ ghi log vào giúp
+    // Công cụ ghi log được truyền vào là công cụ khi ta khai báo ở [1:Program.cs]
+    // ILogger<AgentConnectionManager> là một kiểu dữ liệu cho công cụ ghi log
+    // Giống như kiểu int là kiểu dữ liệu cho số nguyên
+    // Nói chính xác hơn thì ILogger<AgentConnectionManager> là một interface
+    // Quy định các chức năng mà công cu ghi log phải cung cấp:
+    // ILogger: cung cấp chứuc năng ghi log
+    // <AgentConnectionManager>: xác định log thuộc nhóm của class AgentConnectionManager
+    // Nhằm giúp nhận biệt nguồn phát sinh log.
     public AgentConnectionManager(ILogger<AgentConnectionManager> logger)
     {
+        // Bắt buộc phải lưu lại vì hết khi chạy hết phạm vi của constructor này
+        // thì đối tượng ghi log không được lưu lại sẽ coi như phí công cốc
+        // Nói chính xác hơn thì sau phép gán cả 2 sẽ được trỏ vào một đối tượng logger
+        // Cho nên sẽ không có đối tượng ghi log mới nào được tạo ra sau phép gán này cả
         _logger = logger;
     }
 
@@ -74,6 +96,9 @@ public class AgentConnectionManager
 
         _logger.LogInformation("Agent {AgentId} ({Hostname} - {IpAddress}) đã kết nối thành công.",
             agentId, info.Hostname, info.IpAddress);
+
+        // Dòng này lưu thông tin máy theo Agent ID; khi cùng Agent đăng ký lại, thông tin được cập nhật.
+        _knownAgents[agentId] = info;
 
         return connection;
     }
@@ -131,5 +156,25 @@ public class AgentConnectionManager
     public IReadOnlyCollection<AgentConnection> GetAllConnections()
     {
         return _connections.Values.ToList().AsReadOnly();
+    }
+
+    // _knownAgents.Values: lấy thông tin các máy đã đăng ký.
+    // Select(...): chuyển thông tin mỗi máy thành một AgentSummary.
+    // ContainsKey(...): kiểm tra Server còn giữ kết nối của Agent đó hay không.
+    // ToList(): gom kết quả thành danh sách.
+    // Khi Agent ngắt kết nối, Unregister xóa nó khỏi _connections,
+    // còn thông tin trong _knownAgents vẫn tồn tại. Vì vậy IsOnline sẽ trả về false.
+    public List<AgentSummary> GetAgents()
+    {
+        return _knownAgents.Values
+            .Select(info => new AgentSummary
+            {
+                AgentId = info.AgentId,
+                Hostname = info.Hostname,
+                IpAddress = info.IpAddress,
+                OsDescription = info.OsDescription,
+                IsOnline = _connections.ContainsKey(info.AgentId)
+            })
+            .ToList();
     }
 }

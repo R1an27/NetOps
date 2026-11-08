@@ -4,11 +4,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>344f5de1-6013-47f4-85e0-f3b62925a0b6</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore" Version="2.85.0" />
-    <PackageReference Include="MassTransit.RabbitMQ" Version="9.2.5" />
+	<!--[3.1] Cài thư viện vào-->
+    <PackageReference Include="Keycloak.AuthServices.Authentication" Version="3.0.0" />
+	<!--[5.1] Cài thư viện này để kiểm tra role Keycloak để quyết định quyền truy cập-->
+    <PackageReference Include="Keycloak.AuthServices.Authorization" Version="3.0.0" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.5.12" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.1" />
     <PackageReference Include="SSH.NET" Version="2026.0.0" />

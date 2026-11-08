@@ -1,7 +1,15 @@
-using NetOps.Server.Services;
+// [5.2] Khai báo chính sách RunCommands
+// Namespace này chứa các hàm của thư viện vừa cài ở [5.1], gồm AddKeycloakAuthorization() và RequireRealmRoles().
+using Keycloak.AuthServices.Authorization;
 using NetOps.Server.Extensions;
+// Thêm vào để đăng kí SignalIR
+using NetOps.Server.Hubs;
+using NetOps.Server.Services;
 using NetOps.Server.Services.Agentless;
+using System.Data;
 
+// Có sẵn khi tạp Project
+// [1] Thiết lập các dịch vụ mặc định, bao gồm hệ thống logging
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
@@ -10,7 +18,55 @@ builder.AddServiceDefaults();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddGrpc();
-// Đăng ký cuốn danh bạ hoạt động xuyên suốt vòng đời của Server
+
+// [3.3] Đăng ký bộ xác thực trong
+// Đăng ký và cấu hình bộ xác thực token.
+// builder.Configuration cung cấp cấu hình ứng dụng, bao gồm mục Keycloak vừa thêm ở [3.2: appsettings.Development.json]
+// Phương thức này thuộc thư viện Keycloak.AuthServices.Authentication.
+// Web project của bạn đã bật implicit usings nên có thể sử dụng trực tiếp.
+// https://nikiforovall.blog/keycloak-authorization-services-dotnet/migration.html#namespace-changes-for-better-discoverability
+builder.Services.AddKeycloakWebApiAuthentication(builder.Configuration);
+
+// Đăng ký các dịch vụ dùng để kiểm tra yêu cầu truy cập, chẳng hạn yêu cầu người gọi phải được xác thực.
+// Đây là API của Microsoft ASP.NET Core.
+// https://learn.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis/security?view=aspnetcore-10.0
+// Được thêm một số cái [5]
+// Đăng ký các thành phần của thư viện dùng để kiểm tra quyền Keycloak.
+// https://nikiforovall.blog/keycloak-authorization-services-dotnet/configuration/configuration-authorization.html#require-realm-roles
+builder.Services.AddKeycloakAuthorization();
+
+builder.Services.AddAuthorization(options =>
+{
+    // Tạo một chính sách mang tên RunCommands, với các điều kiện được khai báo bên trong.
+    // options là đối tượng cấu hình AuthorizationOptions của Microsoft.
+    //
+    options.AddPolicy("RunCommands", policy =>
+    {
+        // policy là đối tượng AuthorizationPolicyBuilder của Microsoft, dùng để xây các điều kiện.
+        // Khai báo điều kiện: người gọi phải được xác thực và có ít nhất một trong hai realm như dưới.
+        // hàm này chấp nhận một trong các role được truyền vào.
+        // https://github.com/NikiforovAll/keycloak-authorization-services-dotnet/blob/main/src/Keycloak.AuthServices.Authorization/PoliciesBuilderExtensions.cs
+        policy.RequireRealmRoles(
+            "NetOpsAdmin",
+            "NetOpsOperator");
+    });
+    // [8.1] Thêm chính sách ReadMetrics
+    // Tạo chính sách tên ReadMetrics: người gọi phải được xác thực và có ít nhất một trong ba role NetOps.
+    options.AddPolicy("ReadMetrics", policy =>
+    {
+        policy.RequireRealmRoles(
+            "NetOpsAdmin",
+            "NetOpsOperator",
+            "NetOpsViewer");
+    });
+});
+
+// Đăng ký bộ nhớ dùng chung để các service trên server có thể nhận qua constructor
+builder.Services.AddMemoryCache();
+
+// Tạo và quản lý đối tượng AgentConnectionManager
+// ASP.NET core sẽ lo việc lấy đối tượng có tên là logger
+// rồi truyền vào constructor của class AgentConnectionManager
 builder.Services.AddSingleton<AgentConnectionManager>();
 
 // Kích hoạt RabbitMQ & MassTransit
@@ -27,6 +83,9 @@ builder.Services.AddHttpClient("Prometheus", client =>
     client.BaseAddress = new Uri("http://localhost:9090");
 });
 
+// Đăng ký SignalR trong Server
+builder.Services.AddSignalR();
+
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
@@ -38,6 +97,26 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// [3.4] Đưa việc kiểm tra vào luồng xử lý yêu cầu
+//Yêu cầu đi vào Server
+//          ↓
+//UseAuthentication()
+//    Kiểm tra token và xác định người gọi.
+//          ↓
+//UseAuthorization()
+//    Kiểm tra người gọi có đáp ứng
+//    yêu cầu truy cập của endpoint hay không.
+//          ↓
+//Endpoint được thực thi nếu được phép.
+
+// Ví dụ: một yêu cầu không gửi token sẽ chưa có danh tính được xác thực.
+// Nếu endpoint yêu cầu đăng nhập, bước authorization sẽ từ chối yêu cầu đó.
+// UseAuthentication() cần nằm trước UseAuthorization() để danh tính được xác định trước khi kiểm tra quyền.
+// Cả hai đều thuộc Microsoft ASP.NET Core.
+// https://learn.microsoft.com/en-us/aspnet/core/security/authentication/?view=aspnetcore-10.0
+app.UseAuthentication();
+app.UseAuthorization();
 
 var summaries = new[]
 {
@@ -59,6 +138,12 @@ app.MapGet("/weatherforecast", () =>
 .WithName("GetWeatherForecast");
 
 app.MapGrpcService<AgentHubService>();
+// CommandGrpcService là class xử lý
+// MapGrpcService đưa class đó vào hệ thống tiếp nhận lời gọi của Server.
+app.MapGrpcService<CommandGrpcService>()
+    // [4.1] Yêu cầu đăng nhập đối với API gửi lệnh
+    // Người gọi các phương thức của CommandGrpcService phải được xác thực.
+    .RequireAuthorization();
 
 // Endpoint tra cứu nhanh chỉ số mới nhất của 1 máy
 app.MapGet("/api/hosts/{agentId}/metrics/summary", async (string agentId, IHttpClientFactory clientFactory) =>
@@ -107,7 +192,20 @@ app.MapGet("/api/hosts/{agentId}/metrics/summary", async (string agentId, IHttpC
 
     return Results.Ok(summary);
 })
-.WithName("GetHostMetricsSummary");
+.WithName("GetHostMetricsSummary")
+// [8.2] Gắn chính sách vào API metrics
+// Trước khi xử lý yêu cầu tới API này, hãy kiểm tra chính sách ReadMetrics.
+.RequireAuthorization("ReadMetrics");
+
+// Mở địa chỉ để client kết nối tới Hub (SignalIR)
+app.MapHub<NetOpsHub>("/hubs/netops")
+    // [3.5] Yêu cầu người kết nối Hub phải đăng nhập
+    // gắn chính sách truy cập mặc định vào endpoint đó.
+    // Với cấu hình hiện tại, người gọi phải được xác thực.
+    // Phương thức này thuộc Microsoft ASP.NET Core.
+    // https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.builder.authorizationendpointconventionbuilderextensions.requireauthorization?view=aspnetcore-10.0
+    .RequireAuthorization();
+
 
 app.Run();
 

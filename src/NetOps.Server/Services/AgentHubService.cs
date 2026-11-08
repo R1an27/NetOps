@@ -2,7 +2,12 @@
 using Grpc.Core;
 using NetOps.Shared;
 
+using Microsoft.AspNetCore.SignalR;
+using NetOps.Server.Hubs;
+
 namespace NetOps.Server.Services;
+
+using Microsoft.Extensions.Caching.Memory;
 
 // Kế thừa từ lớp AgentHub.AgentHubBase (được sinh ra do quá trình compile file netops.proto)
 public class AgentHubService: AgentHub.AgentHubBase
@@ -10,10 +15,18 @@ public class AgentHubService: AgentHub.AgentHubBase
     // Khai báo cuốn danh bạ
     private readonly AgentConnectionManager _connectionManager;
 
+    // IHubContext<NetOpsHub> là kiểu do MS cugn cấp, cho phép 1 service khác
+    // gửi thông báo đến Desktop đang kết nối với Hub.
+    private readonly IHubContext<NetOpsHub> _hubContext;
     // Constructor: ASP.NET Core sẽ tự động truyền instance của AgentConnectionManager vào đây
-    public AgentHubService(AgentConnectionManager connectionManager)
+
+    // Khai báo cả ở đây để AgentHubServices đọc được thông tin mà CommandGrpcService lưu
+    private readonly IMemoryCache _commandRoutes;
+    public AgentHubService(AgentConnectionManager connectionManager, IHubContext<NetOpsHub> hubContext, IMemoryCache commandRoutes)
     {
         _connectionManager = connectionManager;
+        _hubContext = hubContext;
+        _commandRoutes = commandRoutes;
     }
 
     // Override lại ConnectStream (phương thức virtual trong AgentHubBase - phương thức này do t đặt tên trong netops.proto)
@@ -65,6 +78,40 @@ public class AgentHubService: AgentHub.AgentHubBase
                         // Cập nhật thời gian của hearbeat
                         _connectionManager.UpdateHeartbeat(hb.AgentId, hb);
                         Console.WriteLine($"Nhan Heartbeat tu {hb.AgentId}: CPU {hb.CpuUsagePercent}%");
+                        break;
+
+                    //
+                    case AgentMessage.PayloadOneofCase.CommandOutput:
+                        // lấy kết quả Agent vừa gửi
+                        var output = message.CommandOutput;
+                        var cacheKey = $"command:{output.CommandId}";
+                                            // Tìm connection ID kết nối từ Desktop tới Server đã lưu
+                        if (!_commandRoutes.TryGetValue<string>(
+                                cacheKey, out var desktopConnectionId)
+                            || string.IsNullOrWhiteSpace(desktopConnectionId))
+                        {
+                            break;
+                        }
+
+                        try
+                        {
+                            await _hubContext.Clients
+                                // chọn kết nối Desktop đó.
+                                .Client(desktopConnectionId)
+                                // gửi toàn bộ bản tin output tới handler Desktop đã đăng ký.
+                                .SendAsync("CommandOutputReceived", output);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Không gửi được output tới Desktop: {ex.Message}");
+                        }
+
+                        if (output.IsCompleted)
+                        {
+                            // xóa thông tin định tuyến của lệnh vừa kết thúc.
+                            _commandRoutes.Remove(cacheKey);
+                        }
+
                         break;
                 }
             }
