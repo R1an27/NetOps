@@ -419,6 +419,8 @@ public partial class Form1 : AntdUI.Window
         }
 
         using var window = new AgentsForm();
+        // Truyền MetricsClient có sẵn Bearer Token từ Form chính sang cửa sổ danh bạ
+        window.MetricsClient = new MetricsApiClient("https://localhost:7027", () => _accessToken);
         window.ReloadAgentsAsync = async cancellationToken =>
         {
             var agents = await _hubConnection.InvokeAsync<List<AgentSummary>>(

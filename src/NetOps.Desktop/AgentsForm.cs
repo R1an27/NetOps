@@ -25,26 +25,44 @@ public partial class AgentsForm : AntdUI.Window
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Func<CancellationToken, Task<List<AgentSummary>>>? ReloadAgentsAsync { get; set; }
 
+    // Cung cấp công cụ gọi API Prometheus từ Form chính truyền vào
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public MetricsApiClient? MetricsClient { get; set; }
+    // Khai báo các control hiển thị Metric của AntdUI
+    private AntdUI.Panel pnlMetrics = null!;
+    private AntdUI.Label lblCpuTitle = null!;
+    private AntdUI.Progress prgCpu = null!;
+    private AntdUI.Label lblRamValue = null!;
+    private AntdUI.Label lblDiskValue = null!;
+    private AntdUI.Button btnRefreshMetrics = null!;
+    private AntdUI.Switch swAutoRefresh = null!;
+    private AntdUI.Badge badgeMetricStatus = null!;
+    private System.Windows.Forms.Timer tmrMetrics = null!;
     public AgentsForm()
     {
         InitializeComponent();
         ConfigureTable();
         ApplyFilters();
+        InitializeMetricsUi(); // Bật giao diện metrics
     }
 
     private void ConfigureTable()
     {
         tblAgents.Columns.Add(new AntdUI.Column(nameof(AgentSummary.Hostname), "HOSTNAME")
         {
-            Ellipsis = true, SortOrder = true
+            Ellipsis = true,
+            SortOrder = true
         });
         tblAgents.Columns.Add(new AntdUI.Column(nameof(AgentSummary.IpAddress), "IP ADDRESS")
         {
-            Ellipsis = true, SortOrder = true
+            Ellipsis = true,
+            SortOrder = true
         });
         tblAgents.Columns.Add(new AntdUI.Column(nameof(AgentSummary.OsDescription), "OPERATING SYSTEM")
         {
-            Ellipsis = true, SortOrder = true
+            Ellipsis = true,
+            SortOrder = true
         });
         tblAgents.Columns.Add(new AntdUI.Column(nameof(AgentSummary.IsOnline), "STATUS")
         {
@@ -140,6 +158,19 @@ public partial class AgentsForm : AntdUI.Window
                 : agent.IsOnline
                     ? $"Ready to run commands on {agent.Hostname}."
                     : "This agent is offline. Select an online machine.";
+        }
+
+        // KÍCH HOẠT TẢI METRICS KHI CHỌN MÁY ONLINE
+        if (agent is not null && agent.IsOnline)
+        {
+            pnlMetrics.Visible = true;
+            _ = FetchMetricsForSelectedAgentAsync();
+        }
+        else
+        {
+            pnlMetrics.Visible = false;
+            tmrMetrics.Stop();
+            swAutoRefresh.Checked = false;
         }
     }
 
@@ -282,5 +313,199 @@ public partial class AgentsForm : AntdUI.Window
         _lifetimeDisposed = true;
         _lifetime.Cancel();
         _lifetime.Dispose();
+    }
+
+    private void InitializeMetricsUi()
+    {
+        // Khối Card bo tròn chứa các chỉ số Prometheus đặt ở cột bên phải
+        pnlMetrics = new AntdUI.Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 220,
+            Radius = 8,
+            BorderWidth = 1F,
+            BorderColor = Color.FromArgb(220, 228, 238),
+            Back = Color.FromArgb(249, 250, 252),
+            Padding = new Padding(12),
+            Margin = new Padding(0, 8, 0, 0),
+            Visible = false // Ẩn khi chưa chọn máy nào
+        };
+
+        // 1. Nhãn & Thanh tiến trình CPU (%)
+        lblCpuTitle = new AntdUI.Label
+        {
+            Text = "CPU: 0%",
+            Height = 20,
+            Dock = DockStyle.Top,
+            Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(36, 54, 77)
+        };
+
+        prgCpu = new AntdUI.Progress
+        {
+            Dock = DockStyle.Top,
+            Height = 16,
+            Value = 0,
+            Fill = Color.FromArgb(52, 199, 89) // Mặc định xanh lá
+        };
+
+        // 2. Nhãn hiển thị RAM
+        var lblRamTitle = new AntdUI.Label
+        {
+            Text = "MEMORY USED",
+            Height = 18,
+            Dock = DockStyle.Top,
+            Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(116, 134, 158)
+        };
+        lblRamValue = new AntdUI.Label
+        {
+            Text = "—",
+            Height = 22,
+            Dock = DockStyle.Top,
+            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(21, 35, 57)
+        };
+
+        // 3. Nhãn hiển thị Ổ đĩa Disk
+        var lblDiskTitle = new AntdUI.Label
+        {
+            Text = "DISK FREE",
+            Height = 18,
+            Dock = DockStyle.Top,
+            Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(116, 134, 158)
+        };
+        lblDiskValue = new AntdUI.Label
+        {
+            Text = "—",
+            Height = 22,
+            Dock = DockStyle.Top,
+            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(21, 35, 57)
+        };
+
+        // 4. Thanh công cụ Refresh & Switch Auto 5s
+        var pnlActions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 32,
+            FlowDirection = FlowDirection.LeftToRight
+        };
+
+        btnRefreshMetrics = new AntdUI.Button
+        {
+            Text = "Refresh",
+            Width = 80,
+            Height = 28,
+            Type = AntdUI.TTypeMini.Default
+        };
+        btnRefreshMetrics.Click += async (_, _) => await FetchMetricsForSelectedAgentAsync();
+
+        var lblAuto = new AntdUI.Label
+        {
+            Text = "Auto (5s):",
+            AutoSize = true,
+            Margin = new Padding(12, 6, 0, 0),
+            Font = new Font("Segoe UI", 8F)
+        };
+
+        swAutoRefresh = new AntdUI.Switch
+        {
+            Checked = false,
+            Margin = new Padding(4, 4, 0, 0)
+        };
+        swAutoRefresh.CheckedChanged += (_, _) => tmrMetrics.Enabled = swAutoRefresh.Checked;
+
+        pnlActions.Controls.Add(btnRefreshMetrics);
+        pnlActions.Controls.Add(lblAuto);
+        pnlActions.Controls.Add(swAutoRefresh);
+
+        // Timer tự động cập nhật mỗi 5 giây
+        tmrMetrics = new System.Windows.Forms.Timer { Interval = 5000 };
+        tmrMetrics.Tick += async (_, _) => await FetchMetricsForSelectedAgentAsync();
+
+        // Gắn tất cả các control vào thẻ Card pnlMetrics
+        pnlMetrics.Controls.Add(pnlActions);
+        pnlMetrics.Controls.Add(lblDiskValue);
+        pnlMetrics.Controls.Add(lblDiskTitle);
+        pnlMetrics.Controls.Add(lblRamValue);
+        pnlMetrics.Controls.Add(lblRamTitle);
+        pnlMetrics.Controls.Add(prgCpu);
+        pnlMetrics.Controls.Add(lblCpuTitle);
+
+        // Gắn pnlMetrics vào đáy của cột detailPanel
+        detailPanel.Controls.Add(pnlMetrics);
+        pnlMetrics.BringToFront();
+    }
+
+    // Hàm gọi API và cập nhật số liệu
+    private async Task FetchMetricsForSelectedAgentAsync()
+    {
+        if (_candidate is null || !_candidate.IsOnline || MetricsClient is null)
+        {
+            pnlMetrics.Visible = false;
+            return;
+        }
+
+        try
+        {
+            btnRefreshMetrics.Loading = true;
+            btnRefreshMetrics.Enabled = false;
+
+            // Gọi API lấy dữ liệu từ Prometheus qua MetricsApiClient
+            var metrics = await MetricsClient.GetHostMetricsAsync(_candidate.AgentId);
+            if (metrics is null)
+            {
+                lblCpuTitle.Text = "CPU: —";
+                lblRamValue.Text = "No data";
+                lblDiskValue.Text = "No data";
+                prgCpu.Value = 0;
+                return;
+            }
+
+            // 1. Cập nhật CPU và đổi màu cảnh báo theo ngưỡng tải
+            UpdateCpuDisplay(metrics.CpuPercent);
+
+            // 2. Cập nhật RAM và Ổ đĩa (Quy đổi sang GB/MB dễ đọc)
+            lblRamValue.Text = MetricsFormatter.FormatBytes(metrics.MemoryUsedBytes);
+            lblDiskValue.Text = $"{MetricsFormatter.FormatBytes(metrics.DiskFreeBytes)} free";
+        }
+        catch
+        {
+            // Bỏ qua lỗi mạng
+        }
+        finally
+        {
+            btnRefreshMetrics.Loading = false;
+            btnRefreshMetrics.Enabled = true;
+        }
+    }
+
+    private void UpdateCpuDisplay(double cpuPercent)
+    {
+        prgCpu.Value = (float)Math.Clamp(cpuPercent, 0, 100);
+
+        if (cpuPercent < 60)
+        {
+            // Tải bình thường: Xanh lá cây (Normal)
+            prgCpu.Fill = Color.FromArgb(52, 199, 89);
+            badgeMetricStatus.State = AntdUI.TState.Success;
+            badgeMetricStatus.Text = "Optimal";
+        }
+        else if (cpuPercent < 85)
+        {
+            // Tải tăng cao: Vàng cam (Warning)
+            prgCpu.Fill = Color.FromArgb(255, 149, 0);
+            badgeMetricStatus.State = AntdUI.TState.Warn;
+            badgeMetricStatus.Text = "Moderate load";
+        }
+        else
+        {
+            // Tải nghiêm trọng: Đỏ (Critical)
+            prgCpu.Fill = Color.FromArgb(255, 59, 48);
+            badgeMetricStatus.State = AntdUI.TState.Error;
+            badgeMetricStatus.Text = "High load alert";
+        }
     }
 }
