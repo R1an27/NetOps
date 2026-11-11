@@ -7,6 +7,8 @@ using NetOps.Server.Hubs;
 using NetOps.Server.Services;
 using NetOps.Server.Services.Agentless;
 using System.Data;
+// lấy HostMetricsSummaryDto từ dự án chung NetOps.Shared
+using NetOps.Shared;
 
 // Có sẵn khi tạp Project
 // [1] Thiết lập các dịch vụ mặc định, bao gồm hệ thống logging
