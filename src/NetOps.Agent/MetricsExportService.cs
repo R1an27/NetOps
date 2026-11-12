@@ -1,10 +1,11 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.IO;
+using System.Runtime.InteropServices;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Exporter;
-using OpenTelemetry.Resources; // <-- CCCD của mọi metrics
+using OpenTelemetry.Resources;
 
 namespace NetOps.Agent;
 
@@ -13,44 +14,42 @@ public static class MetricsExportService
     // 1. Tạo "Đồng hồ đo" (Meter) của riêng Agent
     private static readonly Meter AgentMeter = new("NetOps.Agent", "1.0.0");
 
-    //-- Khai báo biến đo CPU --
-
-    //Lưu mốc thời gian thực của lần đo trước để tính khoảng thời gian trôi qua
-    private static DateTime _lastCpuCheck = DateTime.UtcNow;
-    //Lưu tổng thời gian CPU đã thực sự làm việc ở lần đo trước để tính lượng CPU vừa tiêu thụ
-    private static TimeSpan _lastTotalProcessorTime = Process.GetCurrentProcess().TotalProcessorTime;
-    //Bộ nhớ đệm lưu kết quả % CPU gần nhất, giúp tránh tính toán dồn dập khi bị hỏi liên tục
+    // Khai báo biến đo CPU
+    private static ulong _prevIdleTime;
+    private static ulong _prevKernelTime;
+    private static ulong _prevUserTime;
+    private static bool _firstCpuCheck = true;
     private static double _cachedCpuUsage = 0.0;
+    private static DateTime _lastCpuCheck = DateTime.MinValue;
 
     public static MeterProvider InitMetrics(string agentId, string hostName)
     {
-        // 1. Tạo công cụ đo tỷ lệ CPU(%) kiểu Gauge (cho phép giá trị tăng giảm liên tục như đồng hồ tốc độ)
+        // 1. Tạo công cụ đo tỷ lệ CPU(%) kiểu Gauge kèm nhãn host_id
         AgentMeter.CreateObservableGauge(
             name: "system_cpu_utilization_percent",
-            observeValue: () => GetCpuUsagePercent(),
+            observeValue: () => new Measurement<double>(GetCpuUsagePercent(), new KeyValuePair<string, object?>("host_id", agentId)),
             unit: "%",
             description: "Ty le su dung CPU hien tai"
         );
 
-        // 2. Đo dung lượng RAM đã sử dụng (đơn vị: Bytes)
+        // 2. Đo dung lượng RAM đã sử dụng (đơn vị: Bytes) kèm nhãn host_id
         AgentMeter.CreateObservableGauge(
             name: "system_memory_used_bytes",
-            observeValue: () => GetMemoryUsedBytes(),
+            observeValue: () => new Measurement<long>(GetMemoryUsedBytes(), new KeyValuePair<string, object?>("host_id", agentId)),
             unit: "By",
             description: "Dung luong RAM he thong dang su dung"
         );
 
-        // 3. Đo dung lượng Ổ đĩa còn trống (đơn vị: Bytes)
+        // 3. Đo dung lượng Ổ đĩa còn trống (đơn vị: Bytes) kèm nhãn host_id
         AgentMeter.CreateObservableGauge(
             name: "system_disk_free_bytes",
-            observeValue: () => GetSystemDriveFreeBytes(),
+            observeValue: () => new Measurement<long>(GetSystemDriveFreeBytes(), new KeyValuePair<string, object?>("host_id", agentId)),
             unit: "By",
             description: "Dung luong o dia he dieu hanh con trong"
         );
 
-        // 4. Cấu hình OTel MeterProvider để đẩy OTLP về Prometheus (Khởi tạo Pipeline OTel)
+        // 4. Cấu hình OTel MeterProvider để đẩy OTLP về Prometheus
         var meterProvider = Sdk.CreateMeterProviderBuilder()
-            // --- THÊM ĐỊNH DANH MÁY CHỦ ---
             .ConfigureResource(resource => resource
                 .AddService(serviceName: "NetOps.Agent")
                 .AddAttributes(new[]
@@ -58,61 +57,123 @@ public static class MetricsExportService
                     new KeyValuePair<string, object>("host.id", agentId),
                     new KeyValuePair<string, object>("host.name", hostName)
                 }))
-            .AddMeter("NetOps.Agent") // Đăng ký Meter vừa tạo
+            .AddMeter("NetOps.Agent")
             .AddOtlpExporter((options, readerOptions) =>
             {
-                // Cổng tiếp nhận OTLP của Prometheus
                 options.Endpoint = new Uri("http://localhost:9090/api/v1/otlp/v1/metrics");
-                // Protobuf: Đóng gói nhị phân
-                // HTTP: Giao thức truyền tải --> Nhẹ và nhanh hơn JSON
                 options.Protocol = OtlpExportProtocol.HttpProtobuf;
-                // Chu kỳ đẩy dữ liệu (mỗi 5 giây một lần)
                 readerOptions.PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds = 5000;
             })
             .Build();
 
         return meterProvider;
     }
-    // --- CÁC HÀM ĐO ĐẠC NGUYÊN BẢN TỪ .NET ---
 
-    // Thuật toán đo CPU đơn giản: So sánh thời gian CPU chạy giữa 2 lần lấy mẫu
+    // --- CÁC HÀM ĐO ĐẠC HỆ THỐNG CHUẨN XÁC ---
+
+    // 1. Đo CPU toàn hệ thống (Windows: GetSystemTimes API)
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetSystemTimes(
+        out System.Runtime.InteropServices.ComTypes.FILETIME lpIdleTime,
+        out System.Runtime.InteropServices.ComTypes.FILETIME lpKernelTime,
+        out System.Runtime.InteropServices.ComTypes.FILETIME lpUserTime);
+
+    private static ulong ToUInt64(System.Runtime.InteropServices.ComTypes.FILETIME ft) =>
+        ((ulong)(uint)ft.dwHighDateTime << 32) | (uint)ft.dwLowDateTime;
+
     private static double GetCpuUsagePercent()
     {
         var now = DateTime.UtcNow;
-        var elapsedRealTime = (now - _lastCpuCheck).TotalMilliseconds;
-        //-- Chỉ tính toán lại nếu đã trôi qua ít nhất 0.5s (500ms): --
-        //    - Tránh lỗi chia cho 0 nếu bị gọi liên tiếp dồn dập
-        //    - Lọc bỏ nhiễu giật cục tức thời
-        //    - Giảm tải CPU khi không phải gọi System Call liên tục
-        if (elapsedRealTime > 500) 
+        // Nếu chưa đủ 500ms kể từ lần đo trước, trả về giá trị cũ để tránh nhiễu
+        if ((now - _lastCpuCheck).TotalMilliseconds < 500 && !_firstCpuCheck)
         {
-            var currentTotalProcessorTime = Process.GetCurrentProcess().TotalProcessorTime;
-            var elapsedCpuTime = (currentTotalProcessorTime - _lastTotalProcessorTime).TotalMilliseconds;
+            return _cachedCpuUsage;
+        }
 
-            // Tỷ lệ = (Thời gian CPU dùng / (Thời gian thực * số nhân)) * 100
-            _cachedCpuUsage = Math.Round((elapsedCpuTime / (elapsedRealTime * Environment.ProcessorCount)) * 100, 2);
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            if (GetSystemTimes(out var idleFt, out var kernelFt, out var userFt))
+            {
+                var idle = ToUInt64(idleFt);
+                var kernel = ToUInt64(kernelFt);
+                var user = ToUInt64(userFt);
 
-            _lastCpuCheck = now;
-            _lastTotalProcessorTime = currentTotalProcessorTime;
+                if (_firstCpuCheck)
+                {
+                    _prevIdleTime = idle;
+                    _prevKernelTime = kernel;
+                    _prevUserTime = user;
+                    _firstCpuCheck = false;
+                    _lastCpuCheck = now;
+                    return 5.0; // Giá trị lấy mẫu ban đầu
+                }
+
+                var idleDelta = idle - _prevIdleTime;
+                var kernelDelta = kernel - _prevKernelTime;
+                var userDelta = user - _prevUserTime;
+
+                _prevIdleTime = idle;
+                _prevKernelTime = kernel;
+                _prevUserTime = user;
+                _lastCpuCheck = now;
+
+                var totalSystem = kernelDelta + userDelta;
+                if (totalSystem > 0)
+                {
+                    var busy = totalSystem > idleDelta ? totalSystem - idleDelta : 0;
+                    _cachedCpuUsage = Math.Round((double)busy * 100.0 / totalSystem, 1);
+                }
+                return _cachedCpuUsage;
+            }
         }
 
         return _cachedCpuUsage;
     }
 
-    // Đo RAM: Dùng API chính thức của GC trong .NET
-    private static long GetMemoryUsedBytes()
+    // 2. Đo RAM thực tế đang dùng của toàn hệ thống (Windows: GlobalMemoryStatusEx)
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private class MEMORYSTATUSEX
     {
-        var memInfo = GC.GetGCMemoryInfo();
-        return memInfo.MemoryLoadBytes; // Bộ nhớ OS đang chiếm dụng
+        public uint dwLength = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX));
+        public uint dwMemoryLoad;
+        public ulong ullTotalPhys;  // Tổng RAM vật lý (Bytes)
+        public ulong ullAvailPhys;  // RAM vật lý còn trống (Bytes)
+        public ulong ullTotalPageFile;
+        public ulong ullAvailPageFile;
+        public ulong ullTotalVirtual;
+        public ulong ullAvailVirtual;
+        public ulong ullAvailExtendedVirtual;
     }
 
-    // Đo Ổ đĩa: Dùng DriveInfo chính thức của System.IO
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
+
+    private static long GetMemoryUsedBytes()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var mem = new MEMORYSTATUSEX();
+            if (GlobalMemoryStatusEx(mem))
+            {
+                // RAM đã dùng = Tổng RAM vật lý - RAM còn trống
+                return (long)(mem.ullTotalPhys - mem.ullAvailPhys);
+            }
+        }
+
+        // Fallback cho Linux / môi trường khác
+        var memInfo = GC.GetGCMemoryInfo();
+        return memInfo.MemoryLoadBytes > 0
+            ? memInfo.MemoryLoadBytes
+            : Math.Max(0, memInfo.TotalAvailableMemoryBytes - memInfo.TotalCommittedBytes);
+    }
+
+    // 3. Đo dung lượng ổ đĩa còn trống
     private static long GetSystemDriveFreeBytes()
     {
-        // Lấy ổ đĩa cài đặt thư mục hệ thống (thường là C:\ trên Windows hoặc / trên Linux)
         var systemPath = Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\";
         var drive = new DriveInfo(systemPath);
         return drive.AvailableFreeSpace;
     }
 }
-

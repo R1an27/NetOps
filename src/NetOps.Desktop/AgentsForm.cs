@@ -25,10 +25,25 @@ public partial class AgentsForm : AntdUI.Window
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Func<CancellationToken, Task<List<AgentSummary>>>? ReloadAgentsAsync { get; set; }
 
+    // Cung cấp công cụ gọi API Prometheus từ Form chính truyền vào
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public MetricsApiClient? MetricsClient { get; set; }
+    // Khai báo các control hiển thị Metric của AntdUI
+    private AntdUI.Panel pnlMetrics = null!;
+    private AntdUI.Label lblCpuTitle = null!;
+    private AntdUI.Progress prgCpu = null!;
+    private AntdUI.Label lblRamValue = null!;
+    private AntdUI.Label lblDiskValue = null!;
+    private AntdUI.Button btnRefreshMetrics = null!;
+    private AntdUI.Switch swAutoRefresh = null!;
+    private AntdUI.Badge badgeMetricStatus = null!;
+    private System.Windows.Forms.Timer tmrMetrics = null!;
     public AgentsForm()
     {
         InitializeComponent();
         ConfigureTable();
+        InitializeMetricsUi(); // Bật giao diện metrics
         ApplyFilters();
     }
 
@@ -36,15 +51,18 @@ public partial class AgentsForm : AntdUI.Window
     {
         tblAgents.Columns.Add(new AntdUI.Column(nameof(AgentSummary.Hostname), "HOSTNAME")
         {
-            Ellipsis = true, SortOrder = true
+            Ellipsis = true,
+            SortOrder = true
         });
         tblAgents.Columns.Add(new AntdUI.Column(nameof(AgentSummary.IpAddress), "IP ADDRESS")
         {
-            Ellipsis = true, SortOrder = true
+            Ellipsis = true,
+            SortOrder = true
         });
         tblAgents.Columns.Add(new AntdUI.Column(nameof(AgentSummary.OsDescription), "OPERATING SYSTEM")
         {
-            Ellipsis = true, SortOrder = true
+            Ellipsis = true,
+            SortOrder = true
         });
         tblAgents.Columns.Add(new AntdUI.Column(nameof(AgentSummary.IsOnline), "STATUS")
         {
@@ -140,6 +158,23 @@ public partial class AgentsForm : AntdUI.Window
                 : agent.IsOnline
                     ? $"Ready to run commands on {agent.Hostname}."
                     : "This agent is offline. Select an online machine.";
+        }
+
+        // KÍCH HOẠT TẢI METRICS KHI CHỌN MÁY ONLINE
+        if (pnlMetrics is not null)
+        {
+            if (agent is not null && agent.IsOnline)
+            {
+                pnlMetrics.Visible = true;
+                _ = FetchMetricsForSelectedAgentAsync();
+            }
+            else
+            {
+                pnlMetrics.Visible = false;
+                tmrMetrics?.Stop();
+                if (swAutoRefresh is not null)
+                    swAutoRefresh.Checked = false;
+            }
         }
     }
 
@@ -282,5 +317,353 @@ public partial class AgentsForm : AntdUI.Window
         _lifetimeDisposed = true;
         _lifetime.Cancel();
         _lifetime.Dispose();
+    }
+
+    private void InitializeMetricsUi()
+    {
+        badgeMetricStatus = new AntdUI.Badge
+        {
+            Text = "Optimal",
+            State = AntdUI.TState.Success,
+            Dock = DockStyle.Right
+        };
+
+        // 1. Thẻ Card bo tròn lớn, hiện đại chứa các chỉ số Prometheus
+        pnlMetrics = new AntdUI.Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 240,
+            Radius = 12,
+            BorderWidth = 1F,
+            BorderColor = Color.FromArgb(215, 225, 238),
+            Back = Color.FromArgb(248, 250, 253),
+            Padding = new Padding(16, 12, 16, 12),
+            Margin = new Padding(0),
+            Visible = false // Mặc định ẩn khi chưa chọn máy nào
+        };
+
+        // Bố cục dạng TableLayoutPanel chia 5 hàng khoa học, không bao giờ bị đè chữ
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 5,
+            BackColor = Color.Transparent
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F)); // Hàng 0: Tiêu đề + Badge
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52F)); // Hàng 1: CPU Utilization
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74F)); // Hàng 2: RAM & DISK Cards
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8F));  // Hàng 3: Khoảng đệm
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F)); // Hàng 4: Toolbar nút bấm to rõ
+
+        // --- HÀNG 0: Tiêu đề + Badge trạng thái ---
+        var headerPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = new Padding(0),
+            BackColor = Color.Transparent
+        };
+        headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var lblHeader = new AntdUI.Label
+        {
+            Text = "LIVE PERFORMANCE METRICS",
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(71, 85, 105),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        headerPanel.Controls.Add(lblHeader, 0, 0);
+        headerPanel.Controls.Add(badgeMetricStatus, 1, 0);
+        layout.Controls.Add(headerPanel, 0, 0);
+
+        // --- HÀNG 1: CPU Utilization (Tiêu đề + % góc phải + Progress to rõ) ---
+        var cpuPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Margin = new Padding(0),
+            BackColor = Color.Transparent
+        };
+        cpuPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        cpuPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        cpuPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+        cpuPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+
+        var lblCpuCaption = new AntdUI.Label
+        {
+            Text = "CPU UTILIZATION",
+            Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(100, 116, 139),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        lblCpuTitle = new AntdUI.Label
+        {
+            Text = "0.0%",
+            Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(52, 199, 89),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleRight
+        };
+        prgCpu = new AntdUI.Progress
+        {
+            Dock = DockStyle.Fill,
+            Height = 22,
+            Value = 0,
+            Radius = 6,
+            Fill = Color.FromArgb(52, 199, 89)
+        };
+        cpuPanel.Controls.Add(lblCpuCaption, 0, 0);
+        cpuPanel.Controls.Add(lblCpuTitle, 1, 0);
+        cpuPanel.Controls.Add(prgCpu, 0, 1);
+        cpuPanel.SetColumnSpan(prgCpu, 2);
+        layout.Controls.Add(cpuPanel, 0, 1);
+
+        // --- HÀNG 2: RAM & DISK (2 thẻ Card riêng biệt, nền trắng bo góc sang trọng) ---
+        var statsGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = new Padding(0, 4, 0, 4),
+            BackColor = Color.Transparent
+        };
+        statsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        statsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        statsGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+        // Subcard 1: MEMORY
+        var pnlRamCard = new AntdUI.Panel
+        {
+            Dock = DockStyle.Fill,
+            Radius = 8,
+            Back = Color.White,
+            BorderWidth = 1F,
+            BorderColor = Color.FromArgb(226, 232, 240),
+            Margin = new Padding(0, 0, 6, 0)
+        };
+        var ramLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            Padding = new Padding(12, 8, 12, 6)
+        };
+        ramLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
+        ramLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        var lblRamCaption = new AntdUI.Label
+        {
+            Text = "MEMORY USED",
+            Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(100, 116, 139),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        lblRamValue = new AntdUI.Label
+        {
+            Text = "—",
+            Font = new Font("Segoe UI", 15F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(15, 23, 42),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        ramLayout.Controls.Add(lblRamCaption, 0, 0);
+        ramLayout.Controls.Add(lblRamValue, 0, 1);
+        pnlRamCard.Controls.Add(ramLayout);
+
+        // Subcard 2: DISK
+        var pnlDiskCard = new AntdUI.Panel
+        {
+            Dock = DockStyle.Fill,
+            Radius = 8,
+            Back = Color.White,
+            BorderWidth = 1F,
+            BorderColor = Color.FromArgb(226, 232, 240),
+            Margin = new Padding(6, 0, 0, 0)
+        };
+        var diskLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            Padding = new Padding(12, 8, 12, 6)
+        };
+        diskLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
+        diskLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        var lblDiskCaption = new AntdUI.Label
+        {
+            Text = "DISK FREE",
+            Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(100, 116, 139),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        lblDiskValue = new AntdUI.Label
+        {
+            Text = "—",
+            Font = new Font("Segoe UI", 15F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(15, 23, 42),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        diskLayout.Controls.Add(lblDiskCaption, 0, 0);
+        diskLayout.Controls.Add(lblDiskValue, 0, 1);
+        pnlDiskCard.Controls.Add(diskLayout);
+
+        statsGrid.Controls.Add(pnlRamCard, 0, 0);
+        statsGrid.Controls.Add(pnlDiskCard, 1, 0);
+        layout.Controls.Add(statsGrid, 0, 2);
+
+        // --- HÀNG 4: Toolbar (Nút Refresh to đẹp + Công tắc Auto-refresh) ---
+        var actionsPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = new Padding(0, 4, 0, 0),
+            BackColor = Color.Transparent
+        };
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115F));
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        actionsPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+        btnRefreshMetrics = new AntdUI.Button
+        {
+            Text = "Refresh",
+            Width = 110,
+            Height = 36,
+            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+            Type = AntdUI.TTypeMini.Primary,
+            Dock = DockStyle.Left,
+            Cursor = Cursors.Hand
+        };
+        btnRefreshMetrics.Click += async (_, _) => await FetchMetricsForSelectedAgentAsync();
+
+        var lblAuto = new AntdUI.Label
+        {
+            Text = "Auto-refresh (5s):",
+            Font = new Font("Segoe UI", 9F),
+            ForeColor = Color.FromArgb(71, 85, 105),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleRight
+        };
+
+        swAutoRefresh = new AntdUI.Switch
+        {
+            Checked = false,
+            Dock = DockStyle.Right,
+            Margin = new Padding(6, 6, 0, 0)
+        };
+        swAutoRefresh.CheckedChanged += (_, _) => tmrMetrics.Enabled = swAutoRefresh.Checked;
+
+        actionsPanel.Controls.Add(btnRefreshMetrics, 0, 0);
+        actionsPanel.Controls.Add(lblAuto, 1, 0);
+        actionsPanel.Controls.Add(swAutoRefresh, 2, 0);
+        layout.Controls.Add(actionsPanel, 0, 4);
+
+        // Timer tự động cập nhật mỗi 5 giây
+        tmrMetrics = new System.Windows.Forms.Timer { Interval = 5000 };
+        tmrMetrics.Tick += async (_, _) => await FetchMetricsForSelectedAgentAsync();
+
+        pnlMetrics.Controls.Add(layout);
+
+        // Gắn vào hàng 16 của detailLayout
+        detailLayout.Controls.Add(pnlMetrics, 0, 16);
+    }
+
+    // Hàm gọi API và cập nhật số liệu
+    private async Task FetchMetricsForSelectedAgentAsync()
+    {
+        if (_candidate is null || !_candidate.IsOnline || MetricsClient is null)
+        {
+            pnlMetrics.Visible = false;
+            return;
+        }
+
+        try
+        {
+            btnRefreshMetrics.Loading = true;
+            btnRefreshMetrics.Enabled = false;
+
+            // Gọi API lấy dữ liệu từ Prometheus qua MetricsApiClient
+            var metrics = await MetricsClient.GetHostMetricsAsync(_candidate.AgentId);
+            if (metrics is null)
+            {
+                lblCpuTitle.Text = "CPU: —";
+                lblRamValue.Text = "No data";
+                lblDiskValue.Text = "No data";
+                prgCpu.Value = 0;
+                return;
+            }
+
+            // 1. Cập nhật CPU và đổi màu cảnh báo theo ngưỡng tải
+            UpdateCpuDisplay(metrics.CpuPercent);
+
+            // 2. Cập nhật RAM và Ổ đĩa (Quy đổi sang GB/MB dễ đọc)
+            lblRamValue.Text = MetricsFormatter.FormatBytes(metrics.MemoryUsedBytes);
+            lblDiskValue.Text = $"{MetricsFormatter.FormatBytes(metrics.DiskFreeBytes)} free";
+        }
+        catch
+        {
+            // Bỏ qua lỗi mạng
+        }
+        finally
+        {
+            btnRefreshMetrics.Loading = false;
+            btnRefreshMetrics.Enabled = true;
+        }
+    }
+
+    private void UpdateCpuDisplay(double cpuPercent)
+    {
+        // Thang đo AntdUI.Progress.Value quy định từ 0.0F đến 1.0F (0.05F = 5%, 1.0F = 100%)
+        float normalized = (float)Math.Clamp(cpuPercent / 100.0, 0.0, 1.0);
+        prgCpu.Value = normalized;
+        lblCpuTitle.Text = $"{cpuPercent:F1}%";
+        if (cpuPercent < 60)
+        {
+            // Tải bình thường: Xanh lá cây (Normal)
+            prgCpu.Fill = Color.FromArgb(52, 199, 89);
+            lblCpuTitle.ForeColor = Color.FromArgb(52, 199, 89);
+            if (badgeMetricStatus is not null)
+            {
+                badgeMetricStatus.State = AntdUI.TState.Success;
+                badgeMetricStatus.Text = "Optimal";
+            }
+        }
+        else if (cpuPercent < 85)
+        {
+            // Tải tăng cao: Vàng cam (Warning)
+            prgCpu.Fill = Color.FromArgb(255, 149, 0);
+            lblCpuTitle.ForeColor = Color.FromArgb(255, 149, 0);
+            if (badgeMetricStatus is not null)
+            {
+                badgeMetricStatus.State = AntdUI.TState.Warn;
+                badgeMetricStatus.Text = "Moderate load";
+            }
+        }
+        else
+        {
+            // Tải nghiêm trọng: Đỏ (Critical)
+            prgCpu.Fill = Color.FromArgb(255, 59, 48);
+            lblCpuTitle.ForeColor = Color.FromArgb(255, 59, 48);
+            if (badgeMetricStatus is not null)
+            {
+                badgeMetricStatus.State = AntdUI.TState.Error;
+                badgeMetricStatus.Text = "High load alert";
+            }
+        }
     }
 }

@@ -7,6 +7,8 @@ using NetOps.Server.Hubs;
 using NetOps.Server.Services;
 using NetOps.Server.Services.Agentless;
 using System.Data;
+// lấy HostMetricsSummaryDto từ dự án chung NetOps.Shared
+using NetOps.Shared;
 
 // Có sẵn khi tạp Project
 // [1] Thiết lập các dịch vụ mặc định, bao gồm hệ thống logging
@@ -155,7 +157,10 @@ app.MapGet("/api/hosts/{agentId}/metrics/summary", async (string agentId, IHttpC
     {
         try
         {
-            string query = $"{metricName}{{host_id=\"{agentId}\"}}";
+            // Trong OpenTelemetry OTLP đẩy vào Prometheus:
+            // - Thông tin host_id nằm trong metric target_info, kết hợp qua phép join trên (instance, job)
+            // - Fallback truy vấn trực tiếp nếu metric mang sẵn nhãn host_id
+            string query = $"{metricName} * on(instance, job) group_left(host_id) target_info{{host_id=\"{agentId}\"}} or {metricName}{{host_id=\"{agentId}\"}}";
             // Gửi câu hỏi sang Prometheus qua mạng
             var res = await client.GetFromJsonAsync<System.Text.Json.Nodes.JsonNode>($"/api/v1/query?query={Uri.EscapeDataString(query)}");
             // Trích xuất giá trị số từ kết quả JSON trả về
