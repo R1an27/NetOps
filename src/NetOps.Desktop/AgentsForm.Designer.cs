@@ -440,9 +440,9 @@ partial class AgentsForm
         btnRefresh.TabIndex = 2;
         btnRefresh.Click += btnRefresh_Click;
 
-        bodyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        bodyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55F));
         bodyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 18F));
-        bodyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260F));
+        bodyLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45F));
         bodyLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         // bodyLayout
         bodyLayout.Name = "bodyLayout";
@@ -571,30 +571,35 @@ partial class AgentsForm
         detailPanel.BorderWidth = 1F;
         detailPanel.BorderColor = Color.FromArgb(220, 228, 238);
         detailPanel.Padding = new Padding(20);
+        detailPanel.AutoScroll = true;
         detailPanel.Controls.Add(detailLayout);
 
         detailLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 14F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 6F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 10F));
         detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 1F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 14F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 10F));
         detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 16F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 16F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 16F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
         detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 12F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 16F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 80F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 16F));
-        detailLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+        detailLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         // detailLayout
         detailLayout.Name = "detailLayout";
-        detailLayout.Dock = DockStyle.Fill;
+        detailLayout.Dock = DockStyle.Top;
+        detailLayout.AutoSize = true;
+        detailLayout.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         detailLayout.Margin = new Padding(0);
         detailLayout.ColumnCount = 1;
-        detailLayout.RowCount = 15;
+        detailLayout.RowCount = 17;
         detailLayout.BackColor = Color.FromArgb(255, 255, 255);
         detailLayout.Controls.Add(lblDetailsTitle, 0, 0);
         detailLayout.Controls.Add(lblSelectedName, 0, 2);

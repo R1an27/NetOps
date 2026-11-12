@@ -43,8 +43,8 @@ public partial class AgentsForm : AntdUI.Window
     {
         InitializeComponent();
         ConfigureTable();
-        ApplyFilters();
         InitializeMetricsUi(); // Bật giao diện metrics
+        ApplyFilters();
     }
 
     private void ConfigureTable()
@@ -161,16 +161,20 @@ public partial class AgentsForm : AntdUI.Window
         }
 
         // KÍCH HOẠT TẢI METRICS KHI CHỌN MÁY ONLINE
-        if (agent is not null && agent.IsOnline)
+        if (pnlMetrics is not null)
         {
-            pnlMetrics.Visible = true;
-            _ = FetchMetricsForSelectedAgentAsync();
-        }
-        else
-        {
-            pnlMetrics.Visible = false;
-            tmrMetrics.Stop();
-            swAutoRefresh.Checked = false;
+            if (agent is not null && agent.IsOnline)
+            {
+                pnlMetrics.Visible = true;
+                _ = FetchMetricsForSelectedAgentAsync();
+            }
+            else
+            {
+                pnlMetrics.Visible = false;
+                tmrMetrics?.Stop();
+                if (swAutoRefresh is not null)
+                    swAutoRefresh.Checked = false;
+            }
         }
     }
 
@@ -317,126 +321,266 @@ public partial class AgentsForm : AntdUI.Window
 
     private void InitializeMetricsUi()
     {
-        // Khối Card bo tròn chứa các chỉ số Prometheus đặt ở cột bên phải
+        badgeMetricStatus = new AntdUI.Badge
+        {
+            Text = "Optimal",
+            State = AntdUI.TState.Success,
+            Dock = DockStyle.Right
+        };
+
+        // 1. Thẻ Card bo tròn lớn, hiện đại chứa các chỉ số Prometheus
         pnlMetrics = new AntdUI.Panel
         {
-            Dock = DockStyle.Bottom,
-            Height = 220,
-            Radius = 8,
+            Dock = DockStyle.Top,
+            Height = 240,
+            Radius = 12,
             BorderWidth = 1F,
-            BorderColor = Color.FromArgb(220, 228, 238),
-            Back = Color.FromArgb(249, 250, 252),
-            Padding = new Padding(12),
-            Margin = new Padding(0, 8, 0, 0),
-            Visible = false // Ẩn khi chưa chọn máy nào
+            BorderColor = Color.FromArgb(215, 225, 238),
+            Back = Color.FromArgb(248, 250, 253),
+            Padding = new Padding(16, 12, 16, 12),
+            Margin = new Padding(0),
+            Visible = false // Mặc định ẩn khi chưa chọn máy nào
         };
 
-        // 1. Nhãn & Thanh tiến trình CPU (%)
+        // Bố cục dạng TableLayoutPanel chia 5 hàng khoa học, không bao giờ bị đè chữ
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 5,
+            BackColor = Color.Transparent
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F)); // Hàng 0: Tiêu đề + Badge
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52F)); // Hàng 1: CPU Utilization
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74F)); // Hàng 2: RAM & DISK Cards
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8F));  // Hàng 3: Khoảng đệm
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F)); // Hàng 4: Toolbar nút bấm to rõ
+
+        // --- HÀNG 0: Tiêu đề + Badge trạng thái ---
+        var headerPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = new Padding(0),
+            BackColor = Color.Transparent
+        };
+        headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var lblHeader = new AntdUI.Label
+        {
+            Text = "LIVE PERFORMANCE METRICS",
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(71, 85, 105),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        headerPanel.Controls.Add(lblHeader, 0, 0);
+        headerPanel.Controls.Add(badgeMetricStatus, 1, 0);
+        layout.Controls.Add(headerPanel, 0, 0);
+
+        // --- HÀNG 1: CPU Utilization (Tiêu đề + % góc phải + Progress to rõ) ---
+        var cpuPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Margin = new Padding(0),
+            BackColor = Color.Transparent
+        };
+        cpuPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        cpuPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        cpuPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+        cpuPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+
+        var lblCpuCaption = new AntdUI.Label
+        {
+            Text = "CPU UTILIZATION",
+            Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(100, 116, 139),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
         lblCpuTitle = new AntdUI.Label
         {
-            Text = "CPU: 0%",
-            Height = 20,
-            Dock = DockStyle.Top,
-            Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
-            ForeColor = Color.FromArgb(36, 54, 77)
+            Text = "0.0%",
+            Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(52, 199, 89),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleRight
         };
-
         prgCpu = new AntdUI.Progress
         {
-            Dock = DockStyle.Top,
-            Height = 16,
+            Dock = DockStyle.Fill,
+            Height = 22,
             Value = 0,
-            Fill = Color.FromArgb(52, 199, 89) // Mặc định xanh lá
+            Radius = 6,
+            Fill = Color.FromArgb(52, 199, 89)
         };
+        cpuPanel.Controls.Add(lblCpuCaption, 0, 0);
+        cpuPanel.Controls.Add(lblCpuTitle, 1, 0);
+        cpuPanel.Controls.Add(prgCpu, 0, 1);
+        cpuPanel.SetColumnSpan(prgCpu, 2);
+        layout.Controls.Add(cpuPanel, 0, 1);
 
-        // 2. Nhãn hiển thị RAM
-        var lblRamTitle = new AntdUI.Label
+        // --- HÀNG 2: RAM & DISK (2 thẻ Card riêng biệt, nền trắng bo góc sang trọng) ---
+        var statsGrid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = new Padding(0, 4, 0, 4),
+            BackColor = Color.Transparent
+        };
+        statsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        statsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        statsGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+        // Subcard 1: MEMORY
+        var pnlRamCard = new AntdUI.Panel
+        {
+            Dock = DockStyle.Fill,
+            Radius = 8,
+            Back = Color.White,
+            BorderWidth = 1F,
+            BorderColor = Color.FromArgb(226, 232, 240),
+            Margin = new Padding(0, 0, 6, 0)
+        };
+        var ramLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            Padding = new Padding(12, 8, 12, 6)
+        };
+        ramLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
+        ramLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        var lblRamCaption = new AntdUI.Label
         {
             Text = "MEMORY USED",
-            Height = 18,
-            Dock = DockStyle.Top,
-            Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
-            ForeColor = Color.FromArgb(116, 134, 158)
+            Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(100, 116, 139),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            TextAlign = ContentAlignment.MiddleLeft
         };
         lblRamValue = new AntdUI.Label
         {
             Text = "—",
-            Height = 22,
-            Dock = DockStyle.Top,
-            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-            ForeColor = Color.FromArgb(21, 35, 57)
+            Font = new Font("Segoe UI", 15F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(15, 23, 42),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            TextAlign = ContentAlignment.MiddleLeft
         };
+        ramLayout.Controls.Add(lblRamCaption, 0, 0);
+        ramLayout.Controls.Add(lblRamValue, 0, 1);
+        pnlRamCard.Controls.Add(ramLayout);
 
-        // 3. Nhãn hiển thị Ổ đĩa Disk
-        var lblDiskTitle = new AntdUI.Label
+        // Subcard 2: DISK
+        var pnlDiskCard = new AntdUI.Panel
+        {
+            Dock = DockStyle.Fill,
+            Radius = 8,
+            Back = Color.White,
+            BorderWidth = 1F,
+            BorderColor = Color.FromArgb(226, 232, 240),
+            Margin = new Padding(6, 0, 0, 0)
+        };
+        var diskLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            Padding = new Padding(12, 8, 12, 6)
+        };
+        diskLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
+        diskLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        var lblDiskCaption = new AntdUI.Label
         {
             Text = "DISK FREE",
-            Height = 18,
-            Dock = DockStyle.Top,
-            Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
-            ForeColor = Color.FromArgb(116, 134, 158)
+            Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(100, 116, 139),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            TextAlign = ContentAlignment.MiddleLeft
         };
         lblDiskValue = new AntdUI.Label
         {
             Text = "—",
-            Height = 22,
-            Dock = DockStyle.Top,
-            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-            ForeColor = Color.FromArgb(21, 35, 57)
+            Font = new Font("Segoe UI", 15F, FontStyle.Bold),
+            ForeColor = Color.FromArgb(15, 23, 42),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            TextAlign = ContentAlignment.MiddleLeft
         };
+        diskLayout.Controls.Add(lblDiskCaption, 0, 0);
+        diskLayout.Controls.Add(lblDiskValue, 0, 1);
+        pnlDiskCard.Controls.Add(diskLayout);
 
-        // 4. Thanh công cụ Refresh & Switch Auto 5s
-        var pnlActions = new FlowLayoutPanel
+        statsGrid.Controls.Add(pnlRamCard, 0, 0);
+        statsGrid.Controls.Add(pnlDiskCard, 1, 0);
+        layout.Controls.Add(statsGrid, 0, 2);
+
+        // --- HÀNG 4: Toolbar (Nút Refresh to đẹp + Công tắc Auto-refresh) ---
+        var actionsPanel = new TableLayoutPanel
         {
-            Dock = DockStyle.Bottom,
-            Height = 32,
-            FlowDirection = FlowDirection.LeftToRight
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = new Padding(0, 4, 0, 0),
+            BackColor = Color.Transparent
         };
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115F));
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        actionsPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
         btnRefreshMetrics = new AntdUI.Button
         {
             Text = "Refresh",
-            Width = 80,
-            Height = 28,
-            Type = AntdUI.TTypeMini.Default
+            Width = 110,
+            Height = 36,
+            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+            Type = AntdUI.TTypeMini.Primary,
+            Dock = DockStyle.Left,
+            Cursor = Cursors.Hand
         };
         btnRefreshMetrics.Click += async (_, _) => await FetchMetricsForSelectedAgentAsync();
 
         var lblAuto = new AntdUI.Label
         {
-            Text = "Auto (5s):",
-            AutoSize = true,
-            Margin = new Padding(12, 6, 0, 0),
-            Font = new Font("Segoe UI", 8F)
+            Text = "Auto-refresh (5s):",
+            Font = new Font("Segoe UI", 9F),
+            ForeColor = Color.FromArgb(71, 85, 105),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleRight
         };
 
         swAutoRefresh = new AntdUI.Switch
         {
             Checked = false,
-            Margin = new Padding(4, 4, 0, 0)
+            Dock = DockStyle.Right,
+            Margin = new Padding(6, 6, 0, 0)
         };
         swAutoRefresh.CheckedChanged += (_, _) => tmrMetrics.Enabled = swAutoRefresh.Checked;
 
-        pnlActions.Controls.Add(btnRefreshMetrics);
-        pnlActions.Controls.Add(lblAuto);
-        pnlActions.Controls.Add(swAutoRefresh);
+        actionsPanel.Controls.Add(btnRefreshMetrics, 0, 0);
+        actionsPanel.Controls.Add(lblAuto, 1, 0);
+        actionsPanel.Controls.Add(swAutoRefresh, 2, 0);
+        layout.Controls.Add(actionsPanel, 0, 4);
 
         // Timer tự động cập nhật mỗi 5 giây
         tmrMetrics = new System.Windows.Forms.Timer { Interval = 5000 };
         tmrMetrics.Tick += async (_, _) => await FetchMetricsForSelectedAgentAsync();
 
-        // Gắn tất cả các control vào thẻ Card pnlMetrics
-        pnlMetrics.Controls.Add(pnlActions);
-        pnlMetrics.Controls.Add(lblDiskValue);
-        pnlMetrics.Controls.Add(lblDiskTitle);
-        pnlMetrics.Controls.Add(lblRamValue);
-        pnlMetrics.Controls.Add(lblRamTitle);
-        pnlMetrics.Controls.Add(prgCpu);
-        pnlMetrics.Controls.Add(lblCpuTitle);
+        pnlMetrics.Controls.Add(layout);
 
-        // Gắn pnlMetrics vào đáy của cột detailPanel
-        detailPanel.Controls.Add(pnlMetrics);
-        pnlMetrics.BringToFront();
+        // Gắn vào hàng 16 của detailLayout
+        detailLayout.Controls.Add(pnlMetrics, 0, 16);
     }
 
     // Hàm gọi API và cập nhật số liệu
@@ -484,28 +628,42 @@ public partial class AgentsForm : AntdUI.Window
 
     private void UpdateCpuDisplay(double cpuPercent)
     {
-        prgCpu.Value = (float)Math.Clamp(cpuPercent, 0, 100);
-
+        // Thang đo AntdUI.Progress.Value quy định từ 0.0F đến 1.0F (0.05F = 5%, 1.0F = 100%)
+        float normalized = (float)Math.Clamp(cpuPercent / 100.0, 0.0, 1.0);
+        prgCpu.Value = normalized;
+        lblCpuTitle.Text = $"{cpuPercent:F1}%";
         if (cpuPercent < 60)
         {
             // Tải bình thường: Xanh lá cây (Normal)
             prgCpu.Fill = Color.FromArgb(52, 199, 89);
-            badgeMetricStatus.State = AntdUI.TState.Success;
-            badgeMetricStatus.Text = "Optimal";
+            lblCpuTitle.ForeColor = Color.FromArgb(52, 199, 89);
+            if (badgeMetricStatus is not null)
+            {
+                badgeMetricStatus.State = AntdUI.TState.Success;
+                badgeMetricStatus.Text = "Optimal";
+            }
         }
         else if (cpuPercent < 85)
         {
             // Tải tăng cao: Vàng cam (Warning)
             prgCpu.Fill = Color.FromArgb(255, 149, 0);
-            badgeMetricStatus.State = AntdUI.TState.Warn;
-            badgeMetricStatus.Text = "Moderate load";
+            lblCpuTitle.ForeColor = Color.FromArgb(255, 149, 0);
+            if (badgeMetricStatus is not null)
+            {
+                badgeMetricStatus.State = AntdUI.TState.Warn;
+                badgeMetricStatus.Text = "Moderate load";
+            }
         }
         else
         {
             // Tải nghiêm trọng: Đỏ (Critical)
             prgCpu.Fill = Color.FromArgb(255, 59, 48);
-            badgeMetricStatus.State = AntdUI.TState.Error;
-            badgeMetricStatus.Text = "High load alert";
+            lblCpuTitle.ForeColor = Color.FromArgb(255, 59, 48);
+            if (badgeMetricStatus is not null)
+            {
+                badgeMetricStatus.State = AntdUI.TState.Error;
+                badgeMetricStatus.Text = "High load alert";
+            }
         }
     }
 }
