@@ -147,6 +147,7 @@ app.MapGrpcService<CommandGrpcService>()
     // Người gọi các phương thức của CommandGrpcService phải được xác thực.
     .RequireAuthorization();
 
+// -- API của Prometheus --
 // Endpoint tra cứu nhanh chỉ số mới nhất của 1 máy
 app.MapGet("/api/hosts/{agentId}/metrics/summary", async (string agentId, IHttpClientFactory clientFactory) =>
 {
@@ -200,6 +201,116 @@ app.MapGet("/api/hosts/{agentId}/metrics/summary", async (string agentId, IHttpC
 .WithName("GetHostMetricsSummary")
 // [8.2] Gắn chính sách vào API metrics
 // Trước khi xử lý yêu cầu tới API này, hãy kiểm tra chính sách ReadMetrics.
+.RequireAuthorization("ReadMetrics");
+
+// -- API HISTORY METRIC --
+// Endpoint tra cứu chuỗi thời gian lịch sử (5m, 15m, 1h, 3h, 6h)
+app.MapGet("/api/hosts/{agentId}/metrics/history", async (
+    string agentId,
+    string? range,
+    IHttpClientFactory clientFactory) =>
+{
+    var client = clientFactory.CreateClient("Prometheus");
+
+    // 1. Bảng quy đổi dải thời gian sang số giây và bước nhảy (step)
+    string selectedRange = (range ?? "15m").ToLowerInvariant();
+    int rangeSeconds = selectedRange switch
+    {
+        "5m" => 5 * 60,
+        "15m" => 15 * 60,
+        "1h" => 60 * 60,
+        "3h" => 3 * 60 * 60,
+        "6h" => 6 * 60 * 60,
+        _ => 15 * 60
+    };
+
+    // Đảm bảo số điểm đo luôn khoảng 30 đến 60 điểm
+    int step = rangeSeconds / 45;
+    if (step < 5) step = 5;
+
+    long endUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    long startUnix = endUnix - rangeSeconds;
+
+    // 2. Hàm phụ trợ truy vấn Range Query từ Prometheus
+    async Task<List<MetricPointDto>> QueryRangePrometheusAsync(string metricName)
+    {
+        var resultList = new List<MetricPointDto>();
+        try
+        {
+            // Cú pháp join nhãn host_id tương thích OpenTelemetry
+            // ** Bản chất target_info lưu host_id nên khi truy vấn theo host_id thì
+            // ** bề ngoài ta chỉ biết target_info(struct) còn cái host_id thật sự
+            // ** đang NẰM BÊN TRONG target_info --> Phải left_join mới lấy ra được
+            string query = $"{metricName} * on(instance, job) group_left(host_id) target_info{{host_id=\"{agentId}\"}} or {metricName}{{host_id=\"{agentId}\"}}";
+            // Merge query với dải thời gian quy định ở trên thành URL
+            string url = $"/api/v1/query_range?query={Uri.EscapeDataString(query)}&start={startUnix}&end={endUnix}&step={step}";
+
+            // Ghé thăm DB thông qua URL và bưng thùng hàng Json về
+            var res = await client.GetFromJsonAsync<System.Text.Json.Nodes.JsonNode>(url);
+            // Dữ liệu thô của cả thùng hàng
+            var resultArr = res?["data"]?["result"]?.AsArray();
+
+            // Kiểm tra có máy nào khớp ID không?
+            if (resultArr != null && resultArr.Count > 0)
+            {
+                // Bóc từng items trong thùng hàng
+                var valuesArr = resultArr[0]?["values"]?.AsArray();
+                if (valuesArr != null)
+                {
+                    foreach (var pair in valuesArr)
+                    {
+                        // Xử lý dữ liệu thô để người dùng có thể đọc
+                        if (pair is System.Text.Json.Nodes.JsonArray p && p.Count >= 2) // ktra chuẩn cấu trúc mới làm
+                        {
+                            long sec = p[0]!.GetValue<long>();
+                            string? valStr = p[1]?.ToString();
+                            if (double.TryParse(valStr, System.Globalization.CultureInfo.InvariantCulture, out double val))
+                            {
+                                var time = DateTimeOffset.FromUnixTimeSeconds(sec).LocalDateTime;
+                                resultList.Add(new MetricPointDto(time, val));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
+        return resultList;
+    }
+
+    // 3. Thực thi song song 3 truy vấn
+    var cpuTask = QueryRangePrometheusAsync("system_cpu_utilization_percent");
+    var memTask = QueryRangePrometheusAsync("system_memory_used_bytes");
+    var diskTask = QueryRangePrometheusAsync("system_disk_free_bytes");
+
+    await Task.WhenAll(cpuTask, memTask, diskTask);
+
+    var cpuHistory = await cpuTask;
+    var memHistory = await memTask;
+    var diskHistory = await diskTask;
+
+    // 4. Tính toán các chỉ số KPI tóm tắt trong dải
+    // p => p.Value: chỉ lấy Value ra tính toán, không đụng vào TimeStamp
+    double maxCpu = cpuHistory.Count > 0 ? cpuHistory.Max(p => p.Value) : 0.0;
+    double avgCpu = cpuHistory.Count > 0 ? cpuHistory.Average(p => p.Value) : 0.0;
+    long peakMem = memHistory.Count > 0 ? (long)memHistory.Max(p => p.Value) : 0L;
+
+    var responseDto = new HostMetricsHistoryDto(
+        AgentId: agentId,
+        Range: selectedRange,
+        CpuHistory: cpuHistory,
+        MemoryHistory: memHistory,
+        DiskHistory: diskHistory,
+        MaxCpuPercent: maxCpu,
+        AvgCpuPercent: avgCpu,
+        PeakMemoryUsedBytes: peakMem,
+        StartTime: DateTimeOffset.FromUnixTimeSeconds(startUnix).LocalDateTime,
+        EndTime: DateTimeOffset.FromUnixTimeSeconds(endUnix).LocalDateTime
+    );
+
+    return Results.Ok(responseDto);
+})
+.WithName("GetHostMetricsHistory")
 .RequireAuthorization("ReadMetrics");
 
 // Mở địa chỉ để client kết nối tới Hub (SignalIR)
