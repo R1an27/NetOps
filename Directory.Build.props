@@ -1,0 +1,9 @@
+<!--Project là phần tử gốc của file cấu hình MSBuild.-->
+<Project>
+	<!--PropertyGroup gom các thuộc tính cấu hình build.-->
+	<PropertyGroup>
+		<!--Version đặt giá trị phiên bản mặc định là 0.1.0-preview.1.--> 
+		<!--.NET SDK sử dụng thuộc tính này khi tạo thông tin phiên bản cho assembly đầu ra.-->
+		<Version>0.1.0-preview.1</Version>
+	</PropertyGroup>
+</Project>
