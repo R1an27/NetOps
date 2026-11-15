@@ -40,13 +40,17 @@ namespace NetOps.Agent.Services
             {
                 psi.FileName = "powershell.exe";
                 // Dùng -NonInteractive và -NoProfile để script chạy ngầm ổn định, không bị treo chờ input
-                psi.Arguments = $"-NoProfile -NonInteractive -Command \"{request.CommandText}\"";
+                psi.ArgumentList.Add("-NoProfile");
+                psi.ArgumentList.Add("-NonInteractive");
+                psi.ArgumentList.Add("-Command");
+                psi.ArgumentList.Add(request.CommandText);
             }
             else
             {
                 // Mặc định cho Linux/MacOS hoặc yêu cầu Bash
                 psi.FileName = "/bin/bash";
-                psi.Arguments = $"-c \"{request.CommandText}\"";
+                psi.ArgumentList.Add("-c");
+                psi.ArgumentList.Add(request.CommandText);
             }
 
             using var process = new Process { StartInfo = psi };
