@@ -139,7 +139,7 @@ app.MapGet("/weatherforecast", () =>
 })
 .WithName("GetWeatherForecast");
 
-app.MapGrpcService<AgentHubService>();
+app.MapHub<AgentHubService>("/hubs/agents");
 // CommandGrpcService là class xử lý
 // MapGrpcService đưa class đó vào hệ thống tiếp nhận lời gọi của Server.
 app.MapGrpcService<CommandGrpcService>()
@@ -226,3 +226,5 @@ record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
     public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
 }
+
+public partial class Program { }

@@ -85,7 +85,7 @@ public static class SystemInfoService
         return agentId;
     }
 
-    // Hàm đóng gói toàn bộ thông tin máy tính để sẵn sàng gửi qua gRPC
+    // Hàm đóng gói toàn bộ thông tin máy tính để sẵn sàng gửi qua SignalR
     public static RegisterAgentRequest GetRegistrationInfo()
     {
         return new RegisterAgentRequest
