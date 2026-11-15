@@ -525,9 +525,4 @@ public partial class Form1 : AntdUI.Window
             System.Diagnostics.Debug.WriteLine(ex);
         }
     }
-
-    private void txtResult_TextChanged(object sender, EventArgs e)
-    {
-
-    }
 }

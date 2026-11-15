@@ -96,14 +96,6 @@ public class AgentConnectionManager
     }
 
     /// <summary>
-    /// Lấy danh sách toàn bộ các Agent đang Online.
-    /// </summary>
-    public IReadOnlyCollection<AgentConnection> GetAllConnections()
-    {
-        return _connections.Values.ToList().AsReadOnly();
-    }
-
-    /// <summary>
     /// Trả về danh bạ tất cả Agent từng đăng ký kèm trạng thái online/offline cho Desktop.
     /// </summary>
     public List<AgentSummary> GetAgents()
