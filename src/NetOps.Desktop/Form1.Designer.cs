@@ -218,7 +218,7 @@ partial class Form1
         lblServer.Dock = DockStyle.Fill;
         lblServer.Margin = new Padding(0);
         lblServer.Name = "lblServer";
-        lblServer.Text = "localhost:7027";
+        lblServer.Text = "api.r1antech.online";
         lblServer.Font = new Font("Segoe UI", 9F);
         lblServer.ForeColor = Color.FromArgb(51, 65, 85);
         lblServer.TextMultiLine = false;

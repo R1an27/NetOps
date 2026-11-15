@@ -19,7 +19,6 @@ builder.AddServiceDefaults();
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
-builder.Services.AddGrpc();
 
 // [3.3] Đăng ký bộ xác thực trong
 // Đăng ký và cấu hình bộ xác thực token.
@@ -140,12 +139,6 @@ app.MapGet("/weatherforecast", () =>
 .WithName("GetWeatherForecast");
 
 app.MapHub<AgentHubService>("/hubs/agents");
-// CommandGrpcService là class xử lý
-// MapGrpcService đưa class đó vào hệ thống tiếp nhận lời gọi của Server.
-app.MapGrpcService<CommandGrpcService>()
-    // [4.1] Yêu cầu đăng nhập đối với API gửi lệnh
-    // Người gọi các phương thức của CommandGrpcService phải được xác thực.
-    .RequireAuthorization();
 
 // Endpoint tra cứu nhanh chỉ số mới nhất của 1 máy
 app.MapGet("/api/hosts/{agentId}/metrics/summary", async (string agentId, IHttpClientFactory clientFactory) =>

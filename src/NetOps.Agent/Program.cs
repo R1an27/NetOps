@@ -5,9 +5,15 @@ using NetOps.Agent;
 using NetOps.Agent.Services;
 using NetOps.Shared;
 
-var hubUrl = args.FirstOrDefault()
-    ?? Environment.GetEnvironmentVariable("NETOPS_HUB_URL")
-    ?? "https://localhost:7027/hubs/agents";
+const string DefaultHubUrl = "https://api.r1antech.online/hubs/agents";
+
+var cliHubUrl = args.FirstOrDefault(arg => !string.IsNullOrWhiteSpace(arg));
+var envHubUrl = Environment.GetEnvironmentVariable("NETOPS_HUB_URL");
+var hubUrl = !string.IsNullOrWhiteSpace(cliHubUrl)
+    ? cliHubUrl
+    : !string.IsNullOrWhiteSpace(envHubUrl)
+        ? envHubUrl
+        : DefaultHubUrl;
 
 if (!Uri.TryCreate(hubUrl, UriKind.Absolute, out var hubUri)
     || (hubUri.Scheme != Uri.UriSchemeHttps && !(hubUri.Scheme == Uri.UriSchemeHttp && hubUri.IsLoopback)))
