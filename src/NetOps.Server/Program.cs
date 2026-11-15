@@ -6,7 +6,6 @@ using NetOps.Server.Extensions;
 using NetOps.Server.Hubs;
 using NetOps.Server.Services;
 using NetOps.Server.Services.Agentless;
-using System.Data;
 // lấy HostMetricsSummaryDto từ dự án chung NetOps.Shared
 using NetOps.Shared;
 
@@ -119,25 +118,6 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
-
 app.MapHub<AgentHubService>("/hubs/agents");
 
 // Endpoint tra cứu nhanh chỉ số mới nhất của 1 máy
@@ -206,18 +186,3 @@ app.MapHub<NetOpsHub>("/hubs/netops")
 
 
 app.Run();
-
-// CÁC DTO ĐÓNG GÓI DỮ LIỆU CỦA SERVER
-public record HostMetricsSummaryDto(
-    string AgentId,
-    double CpuPercent,
-    long MemoryUsedBytes,
-    long DiskFreeBytes,
-    DateTime Timestamp
-);
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
-
-public partial class Program { }
