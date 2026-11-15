@@ -10,6 +10,9 @@ using NetOps.Shared;
 
 public partial class Form1 : AntdUI.Window
 {
+    private const string ServerBaseUrl = "https://api.r1antech.online";
+    private const string KeycloakAuthority = "https://auth.r1antech.online/realms/netops";
+
     // chứa cấu hình giao tiếp tới Server.
     private readonly GrpcChannel _channel;
 
@@ -39,7 +42,7 @@ public partial class Form1 : AntdUI.Window
         var options = new OidcClientOptions
         {
             // Nơi đăng nhập: Keycloak, realm netops
-            Authority = "http://localhost:8080/realms/netops",
+            Authority = KeycloakAuthority,
             // Ứng dụng yêu cầu: netops-desktop
             ClientId = "netops-desktop",
             // Nơi nhận kết quả
@@ -55,7 +58,7 @@ public partial class Form1 : AntdUI.Window
         // rồi giữ công cụ trong field _oidcClient để các hàm của Form1 dùng được.
         _oidcClient = new OidcClient(options);
 
-        _channel = GrpcChannel.ForAddress("https://localhost:7027");
+        _channel = GrpcChannel.ForAddress(ServerBaseUrl);
 
         _commandClient = new CommandService.CommandServiceClient(_channel);
 
@@ -65,7 +68,7 @@ public partial class Form1 : AntdUI.Window
         // https://learn.microsoft.com/en-us/aspnet/core/signalr/authn-and-authz?view=aspnetcore-10.0#bearer-token-authentication
 
         _hubConnection = new HubConnectionBuilder()
-            .WithUrl("https://localhost:7027/hubs/netops", connectionOptions =>
+            .WithUrl($"{ServerBaseUrl}/hubs/netops", connectionOptions =>
             {
                 // connectionOptions là gì?
                 // connectionOptions là đối tượng cấu hình kết nối HTTP của SignalR.
@@ -420,7 +423,7 @@ public partial class Form1 : AntdUI.Window
 
         using var window = new AgentsForm();
         // Truyền MetricsClient có sẵn Bearer Token từ Form chính sang cửa sổ danh bạ
-        window.MetricsClient = new MetricsApiClient("https://localhost:7027", () => _accessToken);
+        window.MetricsClient = new MetricsApiClient(ServerBaseUrl, () => _accessToken);
         window.ReloadAgentsAsync = async cancellationToken =>
         {
             var agents = await _hubConnection.InvokeAsync<List<AgentSummary>>(
