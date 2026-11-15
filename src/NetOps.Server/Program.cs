@@ -76,11 +76,18 @@ builder.Services.AddRabbitMqMassTransit(builder.Configuration);
 builder.Services.AddSingleton<SshCommandService>();
 
 // Đăng ký HttpClient kết nối tới Prometheus Time-Series Database
+// ➞ Nếu chạy bằng Docker Compose trên VM thì mỗi Service chạy trong 1 container riêng
+// Chúng cô lập với nhau nên nếu vẫn dùng localhost thì nó chỉ có phạm vi trong riêng container netops-server
+// ➞ Trong Dcoker Compose network thì các container gọi nhau bằng tên service (http://prometheus:9090)
+var prometheusBaseUrl = builder.Configuration["Prometheus:BaseUrl"];
+if (string.IsNullOrWhiteSpace(prometheusBaseUrl))
+{
+    prometheusBaseUrl = "http://localhost:9090";
+}
 
 builder.Services.AddHttpClient("Prometheus", client =>
 {
-    // Cổng Prometheus đã được cấu hình trong AppHost
-    client.BaseAddress = new Uri("http://localhost:9090");
+    client.BaseAddress = new Uri(prometheusBaseUrl);
 });
 
 // Đăng ký SignalR trong Server
@@ -94,9 +101,8 @@ app.MapDefaultEndpoints();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseHttpsRedirection();
 }
-
-app.UseHttpsRedirection();
 
 // [3.4] Đưa việc kiểm tra vào luồng xử lý yêu cầu
 //Yêu cầu đi vào Server
