@@ -1,134 +1,115 @@
-// Namespace chứa toàn bộ các khái niệm và giao diện nền tảng của công nghệ gRPC trong C#
-using Grpc.Core;
-using NetOps.Shared;
-
+using System.Net;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Memory;
 using NetOps.Server.Hubs;
+using NetOps.Shared;
 
 namespace NetOps.Server.Services;
 
-using Microsoft.Extensions.Caching.Memory;
-
-// Kế thừa từ lớp AgentHub.AgentHubBase (được sinh ra do quá trình compile file netops.proto)
-public class AgentHubService: AgentHub.AgentHubBase
+public class AgentHubService : Hub
 {
-    // Khai báo cuốn danh bạ
     private readonly AgentConnectionManager _connectionManager;
-
-    // IHubContext<NetOpsHub> là kiểu do MS cugn cấp, cho phép 1 service khác
-    // gửi thông báo đến Desktop đang kết nối với Hub.
-    private readonly IHubContext<NetOpsHub> _hubContext;
-    // Constructor: ASP.NET Core sẽ tự động truyền instance của AgentConnectionManager vào đây
-
-    // Khai báo cả ở đây để AgentHubServices đọc được thông tin mà CommandGrpcService lưu
+    private readonly IHubContext<NetOpsHub> _desktopHubContext;
     private readonly IMemoryCache _commandRoutes;
-    public AgentHubService(AgentConnectionManager connectionManager, IHubContext<NetOpsHub> hubContext, IMemoryCache commandRoutes)
+    private readonly ILogger<AgentHubService> _logger;
+
+    public AgentHubService(
+        AgentConnectionManager connectionManager,
+        IHubContext<NetOpsHub> desktopHubContext,
+        IMemoryCache commandRoutes,
+        ILogger<AgentHubService> logger)
     {
         _connectionManager = connectionManager;
-        _hubContext = hubContext;
+        _desktopHubContext = desktopHubContext;
         _commandRoutes = commandRoutes;
+        _logger = logger;
     }
 
-    // Override lại ConnectStream (phương thức virtual trong AgentHubBase - phương thức này do t đặt tên trong netops.proto)
-    public override async Task ConnectStream(
-        // 3 args này trong thư viện Grpc.Core của MS và GG nha
-        // Inbound giúp Server lắng nghe các tin nhắn AgentMessage do Agent gửi.
-        IAsyncStreamReader<AgentMessage> requestStream,
-        // Outbound giúp Server gửi ServerMessage xuống cho Agent
-        IServerStreamWriter<ServerMessage> responseStream,
-        // Chứa context của cuộc gọi mạng gồm: IP của máy đích, timeout time, token báo ngắt kn
-        ServerCallContext context)
+    public RegisterAgentResponse Register(RegisterAgentRequest? info)
     {
-        string? currentAgentId = null;
+        if (info is null
+            || string.IsNullOrWhiteSpace(info.AgentId) || info.AgentId.Length > 128
+            || string.IsNullOrWhiteSpace(info.Hostname) || info.Hostname.Length > 253
+            || string.IsNullOrWhiteSpace(info.OsDescription) || info.OsDescription.Length > 512
+            || !IPAddress.TryParse(info.IpAddress, out _)
+            || info.CpuCores <= 0 || info.TotalMemoryBytes <= 0)
+        {
+            throw new HubException("Thong tin dang ky Agent khong hop le.");
+        }
+
+        if (Context.Items["AgentId"] is string agentId && agentId != info.AgentId)
+        {
+            throw new HubException("Mot ket noi chi duoc dang ky mot AgentId.");
+        }
+
+        _connectionManager.Register(Context.ConnectionId, info);
+        Context.Items["AgentId"] = info.AgentId;
+        return new RegisterAgentResponse { Success = true, Message = "Server da nhan dang ky thanh cong!" };
+    }
+
+    public void Heartbeat(HeartbeatMessage? heartbeat)
+    {
+        if (heartbeat is null
+            || Context.Items["AgentId"] is not string agentId
+            || heartbeat.AgentId != agentId
+            || !_connectionManager.UpdateHeartbeat(agentId, Context.ConnectionId, heartbeat))
+        {
+            throw new HubException("Agent chua dang ky hoac phien ket noi da het hieu luc.");
+        }
+
+        _logger.LogInformation("Nhan Heartbeat tu {AgentId}: CPU {CpuUsagePercent}%.",
+            agentId, heartbeat.CpuUsagePercent);
+    }
+
+    public async Task SendCommandOutput(CommandOutput? output)
+    {
+        if (output is null
+            || string.IsNullOrWhiteSpace(output.CommandId)
+            || Context.Items["AgentId"] is not string agentId
+            || !_connectionManager.TryGetConnection(agentId, out var active)
+            || active?.ConnectionId != Context.ConnectionId)
+        {
+            throw new HubException("Agent chua dang ky hoac phien ket noi da het hieu luc.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(output.AgentId) && output.AgentId != agentId)
+        {
+            throw new HubException("Khong duoc phep gia danh AgentId khac.");
+        }
+
+        output.AgentId = agentId;
+
+        var cacheKey = $"command:{output.CommandId}";
+        if (!_commandRoutes.TryGetValue<string>(cacheKey, out var desktopConnectionId)
+            || string.IsNullOrWhiteSpace(desktopConnectionId))
+        {
+            return;
+        }
+
         try
         {
-            // Thêm đọc từng tin nhắn mà Agent đẩy lên
-            // requestStream.ReadAllAsync() là Extension Method trong Grpc.Core
-            // Nó biến luồng dữ liệu gRPC thành 1 danh sách bất đồng bộ (IAsyncEnumerable)
-            // cho phép dùng vòng lặp await foreach để cứ có message mới là tự chạy vào thân vòng lặp
-            // context.CancellationToken giúp nhận biết ngay khi Agent đứt mạng
-            await foreach (var message in requestStream.ReadAllAsync(context.CancellationToken))
-            {
-                // Bóc phong bì kiểm tra xem là loại tin nhắn nào
-                switch (message.PayloadCase)
-                {
-                    // Trường hợp 1: Agent gửi thông tin Đăng ký máy
-                    case AgentMessage.PayloadOneofCase.RegisterRequest:
-                        var reg = message.RegisterRequest;
-                        Console.WriteLine($"Agent connect: ID={reg.AgentId}, Hostname={reg.Hostname}");
-                        currentAgentId = reg.AgentId;
-
-                        // Lưu AgentId và responseStream (Tin nhắn chào mừng mà server gửi) vào danh bạ
-                        _connectionManager.Register(reg.AgentId, responseStream, reg);
-
-                        // Server bắn tin nhắn phản hồi chào mừng ngược xuống cho Agent
-                        await responseStream.WriteAsync(new ServerMessage
-                        {
-                            RegisterResponse = new RegisterAgentResponse
-                            {
-                                Success = true,
-                                Message = "Server da nhan dang ky thanh cong!"
-                            }
-                        });
-                        break;
-
-                    // Trường hợp 2: Agent gửi nhịp tim Heartbeat định kỳ
-                    case AgentMessage.PayloadOneofCase.Heartbeat:
-                        var hb = message.Heartbeat;
-                        // Cập nhật thời gian của hearbeat
-                        _connectionManager.UpdateHeartbeat(hb.AgentId, hb);
-                        Console.WriteLine($"Nhan Heartbeat tu {hb.AgentId}: CPU {hb.CpuUsagePercent}%");
-                        break;
-
-                    //
-                    case AgentMessage.PayloadOneofCase.CommandOutput:
-                        // lấy kết quả Agent vừa gửi
-                        var output = message.CommandOutput;
-                        var cacheKey = $"command:{output.CommandId}";
-                                            // Tìm connection ID kết nối từ Desktop tới Server đã lưu
-                        if (!_commandRoutes.TryGetValue<string>(
-                                cacheKey, out var desktopConnectionId)
-                            || string.IsNullOrWhiteSpace(desktopConnectionId))
-                        {
-                            break;
-                        }
-
-                        try
-                        {
-                            await _hubContext.Clients
-                                // chọn kết nối Desktop đó.
-                                .Client(desktopConnectionId)
-                                // gửi toàn bộ bản tin output tới handler Desktop đã đăng ký.
-                                .SendAsync("CommandOutputReceived", output);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Không gửi được output tới Desktop: {ex.Message}");
-                        }
-
-                        if (output.IsCompleted)
-                        {
-                            // xóa thông tin định tuyến của lệnh vừa kết thúc.
-                            _commandRoutes.Remove(cacheKey);
-                        }
-
-                        break;
-                }
-            }
+            await _desktopHubContext.Clients
+                .Client(desktopConnectionId)
+                .SendAsync("CommandOutputReceived", output);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex)
         {
-            // Bắt sự kiện khi Agent ngắt kết nối hoặc hủy stream
+            _logger.LogWarning(ex, "Khong gui duoc output lenh {CommandId} toi Desktop.", output.CommandId);
         }
-        finally
+
+        if (output.IsCompleted)
         {
-            // Khi cuộc gọi kết thúc (dù bình thường hay do mất mạng),
-            // khối finally LUÔN LUÔN chạy để xóa Agent khỏi danh bạ!
-            if (!string.IsNullOrEmpty(currentAgentId))
-            {
-                _connectionManager.Unregister(currentAgentId);
-            }
+            _commandRoutes.Remove(cacheKey);
         }
-        // 
+    }
+
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        if (Context.Items["AgentId"] is string agentId)
+        {
+            _connectionManager.Unregister(agentId, Context.ConnectionId);
+        }
+
+        return base.OnDisconnectedAsync(exception);
     }
 }

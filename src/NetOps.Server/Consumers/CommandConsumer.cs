@@ -1,24 +1,27 @@
-using Grpc.Core;
 using MassTransit;
+using Microsoft.AspNetCore.SignalR;
+using NetOps.Server.Services;
 using NetOps.Shared;
 using NetOps.Shared.Messages;
-using NetOps.Server.Services; // Thay bằng namespace chứa AgentConnectionManager của bạn
-using Microsoft.Extensions.Logging;
-using System.Threading.Tasks;
 
 namespace NetOps.Server.Consumers
 {
     /// <summary>
-    /// Consumer túc trực ở RabbitMQ, nhận lệnh và điều phối xuống Agent qua gRPC
+    /// Consumer túc trực ở RabbitMQ, nhận lệnh và điều phối xuống Agent qua SignalR Hub.
     /// </summary>
     public class CommandConsumer : IConsumer<RunCommandMessage>
     {
         private readonly AgentConnectionManager _connectionManager;
+        private readonly IHubContext<AgentHubService> _agentHubContext;
         private readonly ILogger<CommandConsumer> _logger;
 
-        public CommandConsumer(AgentConnectionManager connectionManager, ILogger<CommandConsumer> logger)
+        public CommandConsumer(
+            AgentConnectionManager connectionManager,
+            IHubContext<AgentHubService> agentHubContext,
+            ILogger<CommandConsumer> logger)
         {
             _connectionManager = connectionManager;
+            _agentHubContext = agentHubContext;
             _logger = logger;
         }
 
@@ -27,39 +30,33 @@ namespace NetOps.Server.Consumers
             var message = context.Message;
             _logger.LogInformation("Đã nhận lệnh {CommandId} từ Queue cho Agent {AgentId}", message.CommandId, message.AgentId);
 
-            // 1. Tìm Agent trong cuốn danh bạ (Dictionary)
-            // LƯU Ý: Bạn cần thêm hàm GetConnection(agentId) trong AgentConnectionManager 
-            // để trả về IServerStreamWriter<ServerMessage> tương ứng với AgentId
-            var agentStream = _connectionManager.GetConnection(message.AgentId);
-            
-            if (agentStream == null)
+            // 1. Tìm phiên SignalR đang hoạt động của Agent
+            if (!_connectionManager.TryGetConnection(message.AgentId, out var connection) || connection is null)
             {
                 _logger.LogWarning("Agent {AgentId} hiện đang offline. Lệnh {CommandId} không thể gửi đi.", message.AgentId, message.CommandId);
-                // Xử lý khi Agent offline (Lưu DB trạng thái Failed, hoặc throw lỗi để MassTransit retry)
-                return; 
+                return;
             }
 
-            // 2. Gói lệnh vào Protobuf Message (ServerMessage)
-            var grpcMessage = new ServerMessage
+            // 2. Đóng gói lệnh thành CommandRequest gửi qua SignalR
+            var commandRequest = new CommandRequest
             {
-                CommandRequest = new CommandRequest // Chắc chắn bạn đã định nghĩa message này trong netops.proto
-                {
-                    CommandId = message.CommandId,
-                    CommandText = message.CommandText,
-                    // Bỏ ShellType, vô dụng vai
-                    TimeoutSeconds = message.TimeoutSeconds
-                }
+                CommandId = message.CommandId,
+                CommandText = message.CommandText,
+                TimeoutSeconds = message.TimeoutSeconds
             };
 
-            // 3. Đẩy lệnh xuống luồng gRPC của Agent
+            // 3. Đẩy lệnh xuống đúng kết nối SignalR hiện hành của Agent
             try
             {
-                await agentStream.WriteAsync(grpcMessage);
-                _logger.LogInformation("Đã đẩy thành công lệnh {CommandId} xuống Agent {AgentId}", message.CommandId, message.AgentId);
+                await _agentHubContext.Clients
+                    .Client(connection.ConnectionId)
+                    .SendAsync("ReceiveCommand", commandRequest, context.CancellationToken);
+                _logger.LogInformation("Đã đẩy thành công lệnh {CommandId} xuống Agent {AgentId} (phien {ConnectionId})",
+                    message.CommandId, message.AgentId, connection.ConnectionId);
             }
-            catch (RpcException ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Lỗi gRPC khi đẩy lệnh {CommandId} xuống Agent {AgentId}", message.CommandId, message.AgentId);
+                _logger.LogError(ex, "Lỗi SignalR khi đẩy lệnh {CommandId} xuống Agent {AgentId}", message.CommandId, message.AgentId);
                 throw; // Throw để MassTransit tự động đẩy lại (retry) hoặc đưa vào Dead Letter Queue
             }
         }

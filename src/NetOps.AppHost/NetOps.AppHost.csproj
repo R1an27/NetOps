@@ -1,11 +1,11 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.6.4">
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
 
   <ItemGroup>
     <ProjectReference Include="..\NetOps.Server\NetOps.Server.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.RabbitMQ" Version="13.6.4" />
+    <PackageReference Include="Aspire.Hosting.RabbitMQ" Version="13.6.5" />
     <PackageReference Include="System.Management.Automation" Version="7.6.9" />
   </ItemGroup>
 
