@@ -336,23 +336,48 @@ public partial class AgentMetricsHistoryForm : AntdUI.Window
         try
         {
             _btnRefresh.Loading = true;
-            _lblStatus.Text = "Fetching data...";
+            _lblStatus.Text = "Querying Prometheus...";
 
             bool success = false;
             if (_metricsClient is not null)
             {
-                // Khi hoàn thiện bước 3 ở Client, phương thức này sẽ được gọi
-                // var history = await _metricsClient.GetHostMetricsHistoryAsync(_agentId, _currentRange, ct);
-                // if (history is not null) { ... success = true; }
+                // 1. Gọi API thực tế thông qua MetricsApiClient (kèm JWT Bearer Token)
+                var history = await _metricsClient.GetHostMetricsHistoryAsync(_agentId, _currentRange, ct);
+
+                if (history is not null && (history.CpuHistory.Count > 0 || history.MemoryHistory.Count > 0 || history.DiskHistory.Count > 0))
+                {
+                    // 2. CPU: Giữ nguyên tỷ lệ phần trăm (0 - 100%), chuyển timestamp sang Giờ địa phương
+                    _cpuPoints = history.CpuHistory
+                        .Select(p => new MetricDataPointItem(p.Timestamp.ToLocalTime(), Math.Round(p.Value, 1)))
+                        .ToList();
+
+                    // 3. RAM: Đổi từ Byte sang Gigabyte (GB)
+                    _ramPoints = history.MemoryHistory
+                        .Select(p => new MetricDataPointItem(p.Timestamp.ToLocalTime(), Math.Round(p.Value / (1024.0 * 1024 * 1024), 2)))
+                        .ToList();
+
+                    // 4. Disk: Đổi từ Byte sang Gigabyte (GB)
+                    _diskPoints = history.DiskHistory
+                        .Select(p => new MetricDataPointItem(p.Timestamp.ToLocalTime(), Math.Round(p.Value / (1024.0 * 1024 * 1024), 2)))
+                        .ToList();
+
+                    success = true;
+                }
             }
 
+            // 5. Nếu không có dữ liệu thật (Agent offline hoặc Prometheus chưa thu thập)
             if (!success)
             {
-                await Task.Delay(300, ct);
-                LoadSimulatedMetricsData();
+                _cpuPoints.Clear();
+                _ramPoints.Clear();
+                _diskPoints.Clear();
+                _lblStatus.Text = "No telemetry data recorded in this range";
+            }
+            else
+            {
+                _lblStatus.Text = $"Live • Updated: {DateTime.Now:HH:mm:ss}";
             }
 
-            _lblStatus.Text = $"Updated: {DateTime.Now:HH:mm:ss}";
             UpdateChartAndKpiDisplay();
         }
         catch (OperationCanceledException) { }
@@ -368,31 +393,32 @@ public partial class AgentMetricsHistoryForm : AntdUI.Window
         }
     }
 
-    private void LoadSimulatedMetricsData()
-    {
-        int minutes = _currentRange switch { "5m" => 5, "15m" => 15, "1h" => 60, "3h" => 180, "6h" => 360, _ => 15 };
-        int stepSeconds = Math.Max(5, minutes * 60 / 40);
+    //-- Đã từng dùng hàm này để giả lập thời gian để kiểm thử và vẽ đồ thị cho UI
+    //private void LoadSimulatedMetricsData()
+    //{
+    //    int minutes = _currentRange switch { "5m" => 5, "15m" => 15, "1h" => 60, "3h" => 180, "6h" => 360, _ => 15 };
+    //    int stepSeconds = Math.Max(5, minutes * 60 / 40);
 
-        _cpuPoints.Clear();
-        _ramPoints.Clear();
-        _diskPoints.Clear();
+    //    _cpuPoints.Clear();
+    //    _ramPoints.Clear();
+    //    _diskPoints.Clear();
 
-        var now = DateTime.Now;
-        var start = now.AddMinutes(-minutes);
-        var rnd = new Random();
-        double currentCpu = 25.0;
-        double currentRamGb = 5.2;
+    //    var now = DateTime.Now;
+    //    var start = now.AddMinutes(-minutes);
+    //    var rnd = new Random();
+    //    double currentCpu = 25.0;
+    //    double currentRamGb = 5.2;
 
-        for (var t = start; t <= now; t = t.AddSeconds(stepSeconds))
-        {
-            currentCpu = Math.Clamp(currentCpu + (rnd.NextDouble() * 16 - 8), 10.0, 95.0);
-            currentRamGb = Math.Clamp(currentRamGb + (rnd.NextDouble() * 0.4 - 0.2), 3.0, 14.0);
+    //    for (var t = start; t <= now; t = t.AddSeconds(stepSeconds))
+    //    {
+    //        currentCpu = Math.Clamp(currentCpu + (rnd.NextDouble() * 16 - 8), 10.0, 95.0);
+    //        currentRamGb = Math.Clamp(currentRamGb + (rnd.NextDouble() * 0.4 - 0.2), 3.0, 14.0);
 
-            _cpuPoints.Add(new MetricDataPointItem(t, Math.Round(currentCpu, 1)));
-            _ramPoints.Add(new MetricDataPointItem(t, Math.Round(currentRamGb, 2)));
-            _diskPoints.Add(new MetricDataPointItem(t, 82.5));
-        }
-    }
+    //        _cpuPoints.Add(new MetricDataPointItem(t, Math.Round(currentCpu, 1)));
+    //        _ramPoints.Add(new MetricDataPointItem(t, Math.Round(currentRamGb, 2)));
+    //        _diskPoints.Add(new MetricDataPointItem(t, 82.5));
+    //    }
+    //}
 
     private void UpdateChartAndKpiDisplay()
     {
