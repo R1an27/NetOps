@@ -539,6 +539,14 @@ public partial class AgentsForm : AntdUI.Window
         actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         actionsPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
+        // Cập nhật actionsPanel cho phần Pop-up
+        actionsPanel.ColumnCount = 4;
+        actionsPanel.ColumnStyles.Clear();
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 105F)); // Nút Refresh
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 105F)); // Nút History (MỚI)
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));  // Giãn cách
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));      // Auto-refresh switch
+
         btnRefreshMetrics = new AntdUI.Button
         {
             Text = "Refresh",
@@ -581,6 +589,31 @@ public partial class AgentsForm : AntdUI.Window
 
         // Gắn vào hàng 16 của detailLayout
         detailLayout.Controls.Add(pnlMetrics, 0, 16);
+
+        // Tạo thêm nút btnHistory để mở Pop-up
+        var btnHistory = new AntdUI.Button
+        {
+            Text = "History",
+            Width = 100,
+            Height = 36,
+            Radius = 6,
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+            Type = AntdUI.TTypeMini.Default,
+            Cursor = Cursors.Hand
+        };
+
+        btnHistory.Click += (_, _) =>
+        {
+            if (_candidate is null || MetricsClient is null) return;
+            using var historyForm = new AgentMetricsHistoryForm(_candidate, MetricsClient);
+            historyForm.ShowDialog(this);
+        };
+
+        // Đặt vào cột 1 của actionsPanel
+        actionsPanel.Controls.Add(btnRefreshMetrics, 0, 0);
+        actionsPanel.Controls.Add(btnHistory, 1, 0);
+        actionsPanel.Controls.Add(lblAuto, 2, 0);
+        actionsPanel.Controls.Add(swAutoRefresh, 3, 0);
     }
 
     // Hàm gọi API và cập nhật số liệu
