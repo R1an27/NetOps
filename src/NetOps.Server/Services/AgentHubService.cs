@@ -52,13 +52,23 @@ public class AgentHubService : Hub
         if (heartbeat is null
             || Context.Items["AgentId"] is not string agentId
             || heartbeat.AgentId != agentId
-            || !_connectionManager.UpdateHeartbeat(agentId, Context.ConnectionId, heartbeat))
+            || !_connectionManager.UpdateHeartbeat(agentId, Context.ConnectionId, SanitizeMetrics(heartbeat)))
         {
             throw new HubException("Agent chua dang ky hoac phien ket noi da het hieu luc.");
         }
 
-        _logger.LogInformation("Nhan Heartbeat tu {AgentId}: CPU {CpuUsagePercent}%.",
-            agentId, heartbeat.CpuUsagePercent);
+        _logger.LogInformation("Nhan Heartbeat tu {AgentId}: CPU {CpuUsagePercent}%, RAM {MemoryUsedMb} MB.",
+            agentId, heartbeat.CpuUsagePercent, heartbeat.MemoryUsedBytes / (1024 * 1024));
+    }
+
+    private static HeartbeatMessage SanitizeMetrics(HeartbeatMessage heartbeat)
+    {
+        heartbeat.CpuUsagePercent = double.IsFinite(heartbeat.CpuUsagePercent)
+            ? Math.Clamp(heartbeat.CpuUsagePercent, 0, 100)
+            : 0;
+        heartbeat.MemoryUsedBytes = Math.Max(0, heartbeat.MemoryUsedBytes);
+        heartbeat.DiskFreeBytes = Math.Max(0, heartbeat.DiskFreeBytes);
+        return heartbeat;
     }
 
     public async Task SendCommandOutput(CommandOutput? output)
