@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,7 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Grpc.AspNetCore" Version="2.85.0" />
 	<!--[3.1] Cài thư viện vào-->
     <PackageReference Include="Keycloak.AuthServices.Authentication" Version="3.0.0" />
 	<!--[5.1] Cài thư viện này để kiểm tra role Keycloak để quyết định quyền truy cập-->

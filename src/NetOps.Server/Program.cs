@@ -6,7 +6,6 @@ using NetOps.Server.Extensions;
 using NetOps.Server.Hubs;
 using NetOps.Server.Services;
 using NetOps.Server.Services.Agentless;
-using System.Data;
 // lấy HostMetricsSummaryDto từ dự án chung NetOps.Shared
 using NetOps.Shared;
 
@@ -19,7 +18,6 @@ builder.AddServiceDefaults();
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
-builder.Services.AddGrpc();
 
 // [3.3] Đăng ký bộ xác thực trong
 // Đăng ký và cấu hình bộ xác thực token.
@@ -78,11 +76,18 @@ builder.Services.AddRabbitMqMassTransit(builder.Configuration);
 builder.Services.AddSingleton<SshCommandService>();
 
 // Đăng ký HttpClient kết nối tới Prometheus Time-Series Database
+// ➞ Nếu chạy bằng Docker Compose trên VM thì mỗi Service chạy trong 1 container riêng
+// Chúng cô lập với nhau nên nếu vẫn dùng localhost thì nó chỉ có phạm vi trong riêng container netops-server
+// ➞ Trong Dcoker Compose network thì các container gọi nhau bằng tên service (http://prometheus:9090)
+var prometheusBaseUrl = builder.Configuration["Prometheus:BaseUrl"];
+if (string.IsNullOrWhiteSpace(prometheusBaseUrl))
+{
+    prometheusBaseUrl = "http://localhost:9090";
+}
 
 builder.Services.AddHttpClient("Prometheus", client =>
 {
-    // Cổng Prometheus đã được cấu hình trong AppHost
-    client.BaseAddress = new Uri("http://localhost:9090");
+    client.BaseAddress = new Uri(prometheusBaseUrl);
 });
 
 // Đăng ký SignalR trong Server
@@ -96,9 +101,8 @@ app.MapDefaultEndpoints();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseHttpsRedirection();
 }
-
-app.UseHttpsRedirection();
 
 // [3.4] Đưa việc kiểm tra vào luồng xử lý yêu cầu
 //Yêu cầu đi vào Server
@@ -120,32 +124,7 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
-
-app.MapGrpcService<AgentHubService>();
-// CommandGrpcService là class xử lý
-// MapGrpcService đưa class đó vào hệ thống tiếp nhận lời gọi của Server.
-app.MapGrpcService<CommandGrpcService>()
-    // [4.1] Yêu cầu đăng nhập đối với API gửi lệnh
-    // Người gọi các phương thức của CommandGrpcService phải được xác thực.
-    .RequireAuthorization();
+app.MapHub<AgentHubService>("/hubs/agents");
 
 // -- API của Prometheus --
 // Endpoint tra cứu nhanh chỉ số mới nhất của 1 máy
@@ -324,16 +303,3 @@ app.MapHub<NetOpsHub>("/hubs/netops")
 
 
 app.Run();
-
-// CÁC DTO ĐÓNG GÓI DỮ LIỆU CỦA SERVER
-public record HostMetricsSummaryDto(
-    string AgentId,
-    double CpuPercent,
-    long MemoryUsedBytes,
-    long DiskFreeBytes,
-    DateTime Timestamp
-);
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

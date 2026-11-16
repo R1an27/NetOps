@@ -1,25 +1,16 @@
 namespace NetOps.Desktop;
 using Duende.IdentityModel.OidcClient;
-// Để sử dụng RpcException để bắt lỗi lời gọi gRPC
-using Grpc.Core;
-// Để sử dụng GrpcChannel để cấu hình giao tiếp tới Server
-using Grpc.Net.Client;
 using Microsoft.AspNetCore.SignalR.Client;
-// Để sd SubmitCommandRequest và CommandServiceClient được sinh từ protobuf
 using NetOps.Shared;
 
 public partial class Form1 : AntdUI.Window
 {
-    // chứa cấu hình giao tiếp tới Server.
-    private readonly GrpcChannel _channel;
-
-    // cung cấp phương thức gọi API SubmitCommand.
+    private const string ServerBaseUrl = "https://api.r1antech.online";
+    private const string KeycloakAuthority = "https://auth.r1antech.online/realms/netops";
 
     private List<AgentSummary> _agents = new();
 
     private readonly HubConnection _hubConnection;
-
-    private readonly CommandService.CommandServiceClient _commandClient;
 
     private readonly OidcClient _oidcClient;
 
@@ -39,7 +30,7 @@ public partial class Form1 : AntdUI.Window
         var options = new OidcClientOptions
         {
             // Nơi đăng nhập: Keycloak, realm netops
-            Authority = "http://localhost:8080/realms/netops",
+            Authority = KeycloakAuthority,
             // Ứng dụng yêu cầu: netops-desktop
             ClientId = "netops-desktop",
             // Nơi nhận kết quả
@@ -55,17 +46,13 @@ public partial class Form1 : AntdUI.Window
         // rồi giữ công cụ trong field _oidcClient để các hàm của Form1 dùng được.
         _oidcClient = new OidcClient(options);
 
-        _channel = GrpcChannel.ForAddress("https://localhost:7027");
-
-        _commandClient = new CommandService.CommandServiceClient(_channel);
-
         // Đoạn này mới tạo đối tượng chứa cấu hình kết nối. Muốn kết nối thật, cần gọi StartAsync().
         // [2.3] Cấu hình SignalR lấy token từ field vừa tạo
         // Đây là cách cấu hình AccessTokenProvider theo ví dụ SignalR .NET client của Microsoft.
         // https://learn.microsoft.com/en-us/aspnet/core/signalr/authn-and-authz?view=aspnetcore-10.0#bearer-token-authentication
 
         _hubConnection = new HubConnectionBuilder()
-            .WithUrl("https://localhost:7027/hubs/netops", connectionOptions =>
+            .WithUrl($"{ServerBaseUrl}/hubs/netops", connectionOptions =>
             {
                 // connectionOptions là gì?
                 // connectionOptions là đối tượng cấu hình kết nối HTTP của SignalR.
@@ -420,7 +407,7 @@ public partial class Form1 : AntdUI.Window
 
         using var window = new AgentsForm();
         // Truyền MetricsClient có sẵn Bearer Token từ Form chính sang cửa sổ danh bạ
-        window.MetricsClient = new MetricsApiClient("https://localhost:7027", () => _accessToken);
+        window.MetricsClient = new MetricsApiClient(ServerBaseUrl, () => _accessToken);
         window.ReloadAgentsAsync = async cancellationToken =>
         {
             var agents = await _hubConnection.InvokeAsync<List<AgentSummary>>(
@@ -461,11 +448,9 @@ public partial class Form1 : AntdUI.Window
             return;
         }
 
-        var desktopConnectionId = _hubConnection.ConnectionId;
-
-        if (string.IsNullOrWhiteSpace(desktopConnectionId))
+        if (_hubConnection.State != HubConnectionState.Connected)
         {
-            SetStatus("Please connect to the server before sending. ", true);
+            SetStatus("Please connect to the server before sending.", true);
             return;
         }
 
@@ -478,45 +463,19 @@ public partial class Form1 : AntdUI.Window
 
         try
         {
-            // Đọc dữ liệu người dùng nhập trên Form.
             var request = new SubmitCommandRequest
             {
-                // Um ID không có dấu cách nên là Trim cho chắc ha
                 AgentId = txtAgentId.Text.Trim(),
                 CommandText = txtCommand.Text,
-                TimeoutSeconds = (int)nudTimeout.Value,
-                DesktopConnectionId = desktopConnectionId
+                TimeoutSeconds = (int)nudTimeout.Value
             };
 
-            // Gửi yêu cầu tới Server và chờ phản hồi.
-            // Dùng await ở đây vì server không thể nào mà phản hồi lập tức được
-            // Chờ Server xử lý xong thì nó sẽ thực hiện tiếp lệnh bên dưới
-            // Nhưng mà trong thời gian chờ server vẫn hoàn toàn có thể thao tác trên giao diện
-            // Chính xác hơn là do Winforms luồng chính chuyênxử lý giao diện
-            // await giúp luồng đó được rảnh trong thời gian chờ phản hồi
-
-            // [4.2] Gửi token từ Desktop
-            // Metadata là class có sẵn của thư viện gRPC, thuộc namespace Grpc.Core và trước đó có using Grpc.Core ở trên rồi.
-            // Class này chứa một tập hợp các mục dạng tên–giá trị, dùng để trao đổi thông tin đi kèm lời gọi gRPC.
-            // https://grpc.github.io/grpc/csharp/api/Grpc.Core.Metadata.html
-            // Ở đây tạo một đối tượng rồi giữ nó trong biến metadata.
-            var metadata = new Metadata();
-
-            // Phương thức Add thêm một mục vào đối tượng vừa tạo:
-            //
-            metadata.Add("authorization", $"Bearer {_accessToken}");
-
-            var response = await _commandClient.SubmitCommandAsync(
-                // Agent nào, lệnh gì, timeout bao lâu, connection ID nhận output.
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var response = await _hubConnection.InvokeAsync<SubmitCommandResponse>(
+                "SubmitCommand",
                 request,
-                // Token để Server xác thực người gửi yêu cầu.
-                // Đây là cách truyền đối số bằng tên:
-                // headers: là tên tham số của SubmitCommandAsync.
-                // metadata là biến chứa đối tượng chúng ta truyền vào tham số đó.
-                headers: metadata,
-                deadline: DateTime.UtcNow.AddSeconds(10));
+                timeoutCts.Token);
 
-            // Nếu Form đã bị giải phóng thì kết thúc hàm, không cập nhật giao diện nữa.
             if (IsDisposed)
                 return;
 
@@ -524,12 +483,21 @@ public partial class Form1 : AntdUI.Window
             if (badgeOutput.Text == "Submitting command")
                 badgeOutput.Text = "Waiting for output";
         }
-        catch (RpcException ex)
+        catch (OperationCanceledException)
         {
             if (IsDisposed)
                 return;
 
-            SetStatus($"{ex.StatusCode}: {ex.Status.Detail}", true);
+            SetStatus("Command submission timed out.", true);
+            badgeOutput.State = AntdUI.TState.Error;
+            badgeOutput.Text = "Submission failed";
+        }
+        catch (Exception ex)
+        {
+            if (IsDisposed)
+                return;
+
+            SetStatus($"Submit failed: {ex.Message}", true);
             badgeOutput.State = AntdUI.TState.Error;
             badgeOutput.Text = "Submission failed";
         }
@@ -548,8 +516,6 @@ public partial class Form1 : AntdUI.Window
     {
         base.OnFormClosed(e);
 
-        _channel.Dispose();
-
         try
         {
             await _hubConnection.DisposeAsync();
@@ -558,10 +524,5 @@ public partial class Form1 : AntdUI.Window
         {
             System.Diagnostics.Debug.WriteLine(ex);
         }
-    }
-
-    private void txtResult_TextChanged(object sender, EventArgs e)
-    {
-
     }
 }

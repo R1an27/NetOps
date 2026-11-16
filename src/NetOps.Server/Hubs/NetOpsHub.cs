@@ -1,61 +1,101 @@
-// [6.1] Dùng bộ nhớ chung đã có trên Server
-using Microsoft.Extensions.Caching.Memory;
-
+using MassTransit;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Memory;
 using NetOps.Server.Services;
 using NetOps.Shared;
+using NetOps.Shared.Messages;
 
-// Dòng này đặt class NetOpsHub vào nhóm tên NetOps.Server.Hubs. Tên đầy đủ của class ấy là: NetOps.Server.Hubs.NetOpsHub
 namespace NetOps.Server.Hubs;
 
 public class NetOpsHub : Hub
 {
-    private readonly AgentConnectionManager _connections;
-    private readonly IMemoryCache _cache;
+    private static readonly Uri CommandQueueUri = new("queue:agent-commands-queue");
 
-    public NetOpsHub(AgentConnectionManager connections, IMemoryCache cache)
+    private readonly AgentConnectionManager _connections;
+    private readonly ISendEndpointProvider _sendEndpointProvider;
+    private readonly IMemoryCache _cache;
+    private readonly ILogger<NetOpsHub> _logger;
+
+    public NetOpsHub(
+        AgentConnectionManager connections,
+        ISendEndpointProvider sendEndpointProvider,
+        IMemoryCache cache,
+        ILogger<NetOpsHub> logger)
     {
         _connections = connections;
+        _sendEndpointProvider = sendEndpointProvider;
         _cache = cache;
+        _logger = logger;
     }
 
-    // [6.2] Khi kết nối thành công, ghi nhận người sở hữu
-    // OnConnectedAsync() là phương thức có sẵn của lớp Hub.
-    // SignalR tự gọi nó khi một client kết nối tới Hub.
-    // Override để bổ sung việc ghi nhớ chủ sở hữu.
-    // https://learn.microsoft.com/en-us/aspnet/core/signalr/hubs?view=aspnetcore-10.0#handle-events-for-a-connection
     public override Task OnConnectedAsync()
     {
-        // Lấy định danh người dùng mà SignalR đã xác định từ danh tính được xác thực.
-        var userId = Context.UserIdentifier;
-
-        // xử lý trường hợp không lấy được định danh: . Abort() cũng là API có sẵn của SignalR.
-        if (string.IsNullOrWhiteSpace(userId))
+        // Từ chối kết nối chưa xác định được danh tính người dùng từ token.
+        if (string.IsNullOrWhiteSpace(Context.UserIdentifier))
         {
-            // Context.Abort() dừng kết nối, rồi phương thức kết thúc
             Context.Abort();
-            // gọi phần xử lý của lớp Hub gốc và trả về Task của nó.
             return Task.CompletedTask;
         }
 
-        // Lưu vào bộ nhớ
-        _cache.Set($"desktop:{Context.ConnectionId}", userId);
-
         return base.OnConnectedAsync();
-    }
-
-    // [6.3] Khi ngắt kết nối, xóa mục đã lưu
-    // OnDisconnectedAsync() cũng là phương thức của Microsoft SignalR, được gọi khi client (desktop) ngắt kết nối.
-    public override Task OnDisconnectedAsync(Exception? exception)
-    {
-        // xóa thông tin của kết nối vừa đóng.
-        _cache.Remove($"desktop:{Context.ConnectionId}");
-
-        return base.OnDisconnectedAsync(exception);
     }
 
     public List<AgentSummary> GetAgents()
     {
         return _connections.GetAgents();
+    }
+
+    [Authorize(Policy = "RunCommands")]
+    public async Task<SubmitCommandResponse> SubmitCommand(SubmitCommandRequest? request)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.AgentId))
+            throw new HubException("AgentId không được để trống.");
+
+        if (string.IsNullOrWhiteSpace(request.CommandText))
+            throw new HubException("Nội dung lệnh không được để trống.");
+
+        if (request.TimeoutSeconds is < 1 or > 3600)
+            throw new HubException("TimeoutSeconds phải nằm trong khoảng 1–3600.");
+
+        if (string.IsNullOrWhiteSpace(Context.UserIdentifier))
+            throw new HubException("Không tìm thấy định danh người gửi lệnh.");
+
+        var agentId = request.AgentId.Trim();
+        if (!_connections.TryGetConnection(agentId, out var connection) || connection is null)
+            throw new HubException("Không tìm thấy kết nối của Agent.");
+
+        // Lưu route bằng chính ConnectionId hiện tại trước khi đẩy vào queue
+        // để output trả về nhanh vẫn định tuyến đúng về Desktop này.
+        var commandId = Guid.NewGuid().ToString("N");
+        var cacheKey = $"command:{commandId}";
+        _cache.Set(cacheKey, Context.ConnectionId);
+
+        var message = new RunCommandMessage
+        {
+            AgentId = agentId,
+            CommandId = commandId,
+            CommandText = request.CommandText,
+            TimeoutSeconds = request.TimeoutSeconds
+        };
+
+        try
+        {
+            var endpoint = await _sendEndpointProvider.GetSendEndpoint(CommandQueueUri);
+            await endpoint.Send(message, Context.ConnectionAborted);
+        }
+        catch (OperationCanceledException) when (Context.ConnectionAborted.IsCancellationRequested)
+        {
+            _cache.Remove(cacheKey);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _cache.Remove(cacheKey);
+            _logger.LogError(ex, "Lỗi gửi lệnh {CommandId} vào RabbitMQ.", commandId);
+            throw new HubException("Không xác nhận được việc gửi lệnh vào hàng đợi.");
+        }
+
+        return new SubmitCommandResponse { CommandId = commandId };
     }
 }

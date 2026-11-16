@@ -1,4 +1,4 @@
-﻿// Namespace chứa các class xử lý mạng cấp cao trong .NET (như DNS, HTTP, địa chỉ IP)
+// Namespace chứa các class xử lý mạng cấp cao trong .NET (như DNS, HTTP, địa chỉ IP)
 // Để dùng class Dns
 using NetOps.Shared;
 using System.Net;
@@ -51,11 +51,6 @@ public static class SystemInfoService
         return GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
     }
 
-    public static double GetTotalMemoryGb()
-    {
-        return GetTotalMemoryBytes() / (1024.0 * 1024 * 1024);
-    }
-
     // 6. Lấy hoặc tạo Agent ID
     // Lần đầu chạy: tạo ID và lưu vào agent-id.txt.
     // Những lần sau: đọc lại ID đã lưu.
@@ -85,7 +80,7 @@ public static class SystemInfoService
         return agentId;
     }
 
-    // Hàm đóng gói toàn bộ thông tin máy tính để sẵn sàng gửi qua gRPC
+    // Hàm đóng gói toàn bộ thông tin máy tính để sẵn sàng gửi qua SignalR
     public static RegisterAgentRequest GetRegistrationInfo()
     {
         return new RegisterAgentRequest
