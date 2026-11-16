@@ -79,16 +79,15 @@ builder.Services.AddSingleton<SshCommandService>();
 // ➞ Nếu chạy bằng Docker Compose trên VM thì mỗi Service chạy trong 1 container riêng
 // Chúng cô lập với nhau nên nếu vẫn dùng localhost thì nó chỉ có phạm vi trong riêng container netops-server
 // ➞ Trong Dcoker Compose network thì các container gọi nhau bằng tên service (http://prometheus:9090)
-var prometheusBaseUrl = builder.Configuration["Prometheus:BaseUrl"];
-if (string.IsNullOrWhiteSpace(prometheusBaseUrl))
-{
-    prometheusBaseUrl = "http://localhost:9090";
-}
+var prometheusBaseUrl = AgentMetricsExporter.ResolvePrometheusBaseUrl(builder.Configuration);
 
 builder.Services.AddHttpClient("Prometheus", client =>
 {
     client.BaseAddress = new Uri(prometheusBaseUrl);
 });
+
+// Đẩy metrics Agent nhận từ SignalR sang Prometheus qua OTLP nội bộ
+builder.Services.AddHostedService<AgentMetricsExporter>();
 
 // Đăng ký SignalR trong Server
 builder.Services.AddSignalR();

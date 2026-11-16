@@ -22,6 +22,7 @@ public sealed class HeartbeatMessage
     public long TimestampUnixMs { get; set; }
     public double CpuUsagePercent { get; set; }
     public long MemoryUsedBytes { get; set; }
+    public long DiskFreeBytes { get; set; }
 }
 
 public sealed class CommandRequest
