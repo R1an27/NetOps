@@ -63,6 +63,43 @@ public class MetricsApiClient
             return null; // Server không online hoặc lỗi mạng
         }
     }
+
+    // Hàm gọi API lấy chuỗi dữ liệu lịch sử theo dải thời gian (5m, 15m, 1h, 3h, 6h)
+    public async Task<HostMetricsHistoryDto?> GetHostMetricsHistoryAsync(
+        string agentId,
+        string range,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var token = _tokenProvider();
+            string url = $"/api/hosts/{Uri.EscapeDataString(agentId)}/metrics/history?range={Uri.EscapeDataString(range)}";
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+            // Gắn Bearer Token để vượt qua chính sách ReadMetrics của Server
+            if (!string.IsNullOrEmpty(token))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+
+            using var response = await _httpClient.SendAsync(request, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<HostMetricsHistoryDto>(cancellationToken: ct);
+            }
+
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            return null; // Khi người dùng bấm đổi dải nhanh thì hủy an toàn
+        }
+        catch (Exception)
+        {
+            return null; // Lỗi mạng hoặc server không phản hồi
+        }
+    }
 }
 
 // BỘ CHUYỂN ĐỔI ĐƠN VỊ 
