@@ -82,7 +82,7 @@ public static class MetricsExportService
     private static ulong ToUInt64(System.Runtime.InteropServices.ComTypes.FILETIME ft) =>
         ((ulong)(uint)ft.dwHighDateTime << 32) | (uint)ft.dwLowDateTime;
 
-    private static double GetCpuUsagePercent()
+    public static double GetCpuUsagePercent()
     {
         var now = DateTime.UtcNow;
         // Nếu chưa đủ 500ms kể từ lần đo trước, trả về giá trị cũ để tránh nhiễu
@@ -150,7 +150,7 @@ public static class MetricsExportService
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
 
-    private static long GetMemoryUsedBytes()
+    public static long GetMemoryUsedBytes()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -170,7 +170,7 @@ public static class MetricsExportService
     }
 
     // 3. Đo dung lượng ổ đĩa còn trống
-    private static long GetSystemDriveFreeBytes()
+    public static long GetSystemDriveFreeBytes()
     {
         var systemPath = Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\";
         var drive = new DriveInfo(systemPath);
