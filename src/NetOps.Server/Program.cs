@@ -125,47 +125,67 @@ app.UseAuthorization();
 
 app.MapHub<AgentHubService>("/hubs/agents");
 
-// -- API của Prometheus --
+// -- API của Prometheus & Fast-path In-Memory --
 // Endpoint tra cứu nhanh chỉ số mới nhất của 1 máy
-app.MapGet("/api/hosts/{agentId}/metrics/summary", async (string agentId, IHttpClientFactory clientFactory) =>
+app.MapGet("/api/hosts/{agentId}/metrics/summary", async (
+    string agentId,
+    AgentConnectionManager connectionManager,
+    IHttpClientFactory clientFactory) =>
 {
+    // 1. FAST-PATH: Ưu tiên lấy trực tiếp từ bộ nhớ RAM của Server nếu Agent đang Online
+    //Điều kiện: Agent đang online + đã có gói tin Heartbeat + gói tin mới gửi <= 30 giây trước
+    if (connectionManager.TryGetConnection(agentId, out var conn)
+        && conn.LatestHeartbeat is { } hb
+        && (DateTime.UtcNow - conn.LastHeartbeatUtc).TotalSeconds <= 30)
+    {
+        return Results.Ok(new HostMetricsSummaryDto(
+            AgentId: agentId,
+            CpuPercent: hb.CpuUsagePercent,
+            MemoryUsedBytes: hb.MemoryUsedBytes,
+            DiskFreeBytes: hb.DiskFreeBytes,
+            Timestamp: conn.LastHeartbeatUtc
+        ));
+    }
+
+    // 2. FALLBACK: Nếu Agent đã offline hoặc chưa có trong RAM, mới truy vấn Prometheus TSDB
     var client = clientFactory.CreateClient("Prometheus");
 
-    // Hàm phụ trợ gọi PromQL và lấy giá trị số kép (double)
     async Task<double> QueryPrometheusMetricAsync(string metricName)
     {
         try
         {
-            // Trong OpenTelemetry OTLP đẩy vào Prometheus:
-            // - Thông tin host_id nằm trong metric target_info, kết hợp qua phép join trên (instance, job)
-            // - Fallback truy vấn trực tiếp nếu metric mang sẵn nhãn host_id
-            string query = $"{metricName} * on(instance, job) group_left(host_id) target_info{{host_id=\"{agentId}\"}} or {metricName}{{host_id=\"{agentId}\"}}";
-            // Gửi câu hỏi sang Prometheus qua mạng
-            var res = await client.GetFromJsonAsync<System.Text.Json.Nodes.JsonNode>($"/api/v1/query?query={Uri.EscapeDataString(query)}");
-            // Trích xuất giá trị số từ kết quả JSON trả về
+            // -- Truy vấn trực tiếp nhãn host_id do AgentMetricsExporter đẩy lên --
+            // Tạo câu truy vấn PromQL lọc đúng máy theo nhãn host_id
+            string query = $"{metricName}{{host_id=\"{agentId}\"}}";
+            // Gọi HTTP GET tới API truy vấn tức thời của Prometheus 
+            var res = await client.GetFromJsonAsync<System.Text.Json.Nodes.JsonNode>(
+                $"/api/v1/query?query={Uri.EscapeDataString(query)}");
+            // Khui gói hàng ra và kiểm tra
             var resultArr = res?["data"]?["result"]?.AsArray();
-            // Kiểm tra xem có máy nào khớp với ID đó không. Nếu máy đó chưa từng gửi dữ liệu (mảng rỗng), thì bỏ qua
             if (resultArr != null && resultArr.Count > 0)
             {
-                // value[1] là giá trị đo được dưới dạng chuỗi
                 var valStr = resultArr[0]?["value"]?[1]?.ToString();
+                // Ép kiểu
                 if (double.TryParse(valStr, System.Globalization.CultureInfo.InvariantCulture, out double val))
                 {
                     return val;
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "Loi khi truy van Range Query Prometheus cho metric {Metric}: {Message}", metricName, ex.Message);
+        }
         return 0.0;
     }
-
-    // Truy vấn song song cả 3 chỉ số từ Prometheus
+    // Truy vấn đồng thời cả 3 cùng lúc
     var cpuTask = QueryPrometheusMetricAsync("system_cpu_utilization_percent");
     var memTask = QueryPrometheusMetricAsync("system_memory_used_bytes");
     var diskTask = QueryPrometheusMetricAsync("system_disk_free_bytes");
 
     await Task.WhenAll(cpuTask, memTask, diskTask);
 
+    // Đóng gói kết quả vào DTO và gửi lên Desktop
     var summary = new HostMetricsSummaryDto(
         AgentId: agentId,
         CpuPercent: await cpuTask,
@@ -176,10 +196,8 @@ app.MapGet("/api/hosts/{agentId}/metrics/summary", async (string agentId, IHttpC
 
     return Results.Ok(summary);
 })
-.WithName("GetHostMetricsSummary")
-// [8.2] Gắn chính sách vào API metrics
-// Trước khi xử lý yêu cầu tới API này, hãy kiểm tra chính sách ReadMetrics.
-.RequireAuthorization("ReadMetrics");
+.WithName("GetHostMetricsSummary") // Đặt định danh cho Endpoint
+.RequireAuthorization("ReadMetrics"); // Bắt buộc client gửi kèm JWT Token hợp lệ và có quyền ReadMetrics
 
 // -- API HISTORY METRIC --
 // Endpoint tra cứu chuỗi thời gian lịch sử (5m, 15m, 1h, 3h, 6h)
@@ -215,11 +233,8 @@ app.MapGet("/api/hosts/{agentId}/metrics/history", async (
         var resultList = new List<MetricPointDto>();
         try
         {
-            // Cú pháp join nhãn host_id tương thích OpenTelemetry
-            // ** Bản chất target_info lưu host_id nên khi truy vấn theo host_id thì
-            // ** bề ngoài ta chỉ biết target_info(struct) còn cái host_id thật sự
-            // ** đang NẰM BÊN TRONG target_info --> Phải left_join mới lấy ra được
-            string query = $"{metricName} * on(instance, job) group_left(host_id) target_info{{host_id=\"{agentId}\"}} or {metricName}{{host_id=\"{agentId}\"}}";
+            // Truy vấn trực tiếp nhãn host_id do AgentMetricsExporter đẩy lên
+            string query = $"{metricName}{{host_id=\"{agentId}\"}}";
             // Merge query với dải thời gian quy định ở trên thành URL
             string url = $"/api/v1/query_range?query={Uri.EscapeDataString(query)}&start={startUnix}&end={endUnix}&step={step}";
 
@@ -252,7 +267,10 @@ app.MapGet("/api/hosts/{agentId}/metrics/history", async (
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "Loi khi truy van Range Query Prometheus cho metric {Metric}: {Message}", metricName, ex.Message);
+        }
         return resultList;
     }
 
