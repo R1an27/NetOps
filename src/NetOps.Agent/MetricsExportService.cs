@@ -1,19 +1,9 @@
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using System.IO;
 using System.Runtime.InteropServices;
-using OpenTelemetry;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Exporter;
-using OpenTelemetry.Resources;
 
 namespace NetOps.Agent;
 
 public static class MetricsExportService
 {
-    // 1. Tạo "Đồng hồ đo" (Meter) của riêng Agent
-    private static readonly Meter AgentMeter = new("NetOps.Agent", "1.0.0");
-
     // Khai báo biến đo CPU
     private static ulong _prevIdleTime;
     private static ulong _prevKernelTime;
@@ -21,53 +11,6 @@ public static class MetricsExportService
     private static bool _firstCpuCheck = true;
     private static double _cachedCpuUsage = 0.0;
     private static DateTime _lastCpuCheck = DateTime.MinValue;
-
-    public static MeterProvider InitMetrics(string agentId, string hostName)
-    {
-        // 1. Tạo công cụ đo tỷ lệ CPU(%) kiểu Gauge kèm nhãn host_id
-        AgentMeter.CreateObservableGauge(
-            name: "system_cpu_utilization_percent",
-            observeValue: () => new Measurement<double>(GetCpuUsagePercent(), new KeyValuePair<string, object?>("host_id", agentId)),
-            unit: "%",
-            description: "Ty le su dung CPU hien tai"
-        );
-
-        // 2. Đo dung lượng RAM đã sử dụng (đơn vị: Bytes) kèm nhãn host_id
-        AgentMeter.CreateObservableGauge(
-            name: "system_memory_used_bytes",
-            observeValue: () => new Measurement<long>(GetMemoryUsedBytes(), new KeyValuePair<string, object?>("host_id", agentId)),
-            unit: "By",
-            description: "Dung luong RAM he thong dang su dung"
-        );
-
-        // 3. Đo dung lượng Ổ đĩa còn trống (đơn vị: Bytes) kèm nhãn host_id
-        AgentMeter.CreateObservableGauge(
-            name: "system_disk_free_bytes",
-            observeValue: () => new Measurement<long>(GetSystemDriveFreeBytes(), new KeyValuePair<string, object?>("host_id", agentId)),
-            unit: "By",
-            description: "Dung luong o dia he dieu hanh con trong"
-        );
-
-        // 4. Cấu hình OTel MeterProvider để đẩy OTLP về Prometheus
-        var meterProvider = Sdk.CreateMeterProviderBuilder()
-            .ConfigureResource(resource => resource
-                .AddService(serviceName: "NetOps.Agent")
-                .AddAttributes(new[]
-                {
-                    new KeyValuePair<string, object>("host.id", agentId),
-                    new KeyValuePair<string, object>("host.name", hostName)
-                }))
-            .AddMeter("NetOps.Agent")
-            .AddOtlpExporter((options, readerOptions) =>
-            {
-                options.Endpoint = new Uri("http://localhost:9090/api/v1/otlp/v1/metrics");
-                options.Protocol = OtlpExportProtocol.HttpProtobuf;
-                readerOptions.PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds = 5000;
-            })
-            .Build();
-
-        return meterProvider;
-    }
 
     // --- CÁC HÀM ĐO ĐẠC HỆ THỐNG CHUẨN XÁC ---
 

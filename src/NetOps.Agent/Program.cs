@@ -30,11 +30,6 @@ var commandExecutor = new CommandExecutor(executorLogger);
 var info = SystemInfoService.GetRegistrationInfo();
 Console.WriteLine($"Agent {info.Hostname} (ID: {info.AgentId}). Nhan Ctrl+C de dung.");
 
-// -- Dòng cũ đẩy OTLP về http://localhost:9090 (chỉ chạy khi tự bật Docker Prometheus tại máy mình) --
-// Khởi tạo và giữ bộ phát OTel hoạt động suốt vòng đời Agent
-//using var metricsProvider = MetricsExportService.InitMetrics(info.AgentId, info.Hostname);
-//Console.WriteLine("Da kich hoat OpenTelemetry Metrics Exporter thanh cong!");
-
 using var shutdown = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>
 {
