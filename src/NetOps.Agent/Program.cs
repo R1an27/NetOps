@@ -30,9 +30,10 @@ var commandExecutor = new CommandExecutor(executorLogger);
 var info = SystemInfoService.GetRegistrationInfo();
 Console.WriteLine($"Agent {info.Hostname} (ID: {info.AgentId}). Nhan Ctrl+C de dung.");
 
+// -- Dòng cũ đẩy OTLP về http://localhost:9090 (chỉ chạy khi tự bật Docker Prometheus tại máy mình) --
 // Khởi tạo và giữ bộ phát OTel hoạt động suốt vòng đời Agent
-using var metricsProvider = MetricsExportService.InitMetrics(info.AgentId, info.Hostname);
-Console.WriteLine("Da kich hoat OpenTelemetry Metrics Exporter thanh cong!");
+//using var metricsProvider = MetricsExportService.InitMetrics(info.AgentId, info.Hostname);
+//Console.WriteLine("Da kich hoat OpenTelemetry Metrics Exporter thanh cong!");
 
 using var shutdown = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>
@@ -67,18 +68,28 @@ try
             }
             Console.WriteLine($"Server phan hoi: {reply.Message}");
 
+            // -- ĐOẠN CODE MỚI (TRUYỀN TRỰC TIẾP SỐ LIỆU CẢM BIẾN MÁY THẬT) --
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
             while (await timer.WaitForNextTickAsync(shutdown.Token))
             {
+                // Đọc thông số phần cứng tức thời từ cảm biến
+                var currentCpu = MetricsExportService.GetCpuUsagePercent();
+                var currentRamBytes = MetricsExportService.GetMemoryUsedBytes();
+                var currentDiskFreeBytes = MetricsExportService.GetSystemDriveFreeBytes();
+
                 await connection.InvokeAsync("Heartbeat", new HeartbeatMessage
                 {
                     AgentId = info.AgentId,
                     TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    // CPU/RAM thực tế sẽ được thu thập ở bước metrics.
-                    CpuUsagePercent = 0,
-                    MemoryUsedBytes = 0
+                    CpuUsagePercent = currentCpu,
+                    MemoryUsedBytes = currentRamBytes,
+                    DiskFreeBytes = currentDiskFreeBytes
                 }, shutdown.Token);
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Da gui Heartbeat toi Server.");
+
+                // In nhật ký chi tiết ra Console để tiện theo dõi
+                var ramMb = currentRamBytes / (1024 * 1024);
+                var diskGb = Math.Round((double)currentDiskFreeBytes / (1024 * 1024 * 1024), 1);
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Da gui Heartbeat: CPU {currentCpu:F1}% | RAM {ramMb} MB | Disk Trong {diskGb} GB");
             }
         }
         catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
