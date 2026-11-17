@@ -125,29 +125,12 @@ app.UseAuthorization();
 
 app.MapHub<AgentHubService>("/hubs/agents");
 
-// -- API của Prometheus & Fast-path In-Memory --
+// -- API của Prometheus --
 // Endpoint tra cứu nhanh chỉ số mới nhất của 1 máy
 app.MapGet("/api/hosts/{agentId}/metrics/summary", async (
     string agentId,
-    AgentConnectionManager connectionManager,
     IHttpClientFactory clientFactory) =>
 {
-    // 1. FAST-PATH: Ưu tiên lấy trực tiếp từ bộ nhớ RAM của Server nếu Agent đang Online
-    //Điều kiện: Agent đang online + đã có gói tin Heartbeat + gói tin mới gửi <= 30 giây trước
-    if (connectionManager.TryGetConnection(agentId, out var conn)
-        && conn.LatestHeartbeat is { } hb
-        && (DateTime.UtcNow - conn.LastHeartbeatUtc).TotalSeconds <= 30)
-    {
-        return Results.Ok(new HostMetricsSummaryDto(
-            AgentId: agentId,
-            CpuPercent: hb.CpuUsagePercent,
-            MemoryUsedBytes: hb.MemoryUsedBytes,
-            DiskFreeBytes: hb.DiskFreeBytes,
-            Timestamp: conn.LastHeartbeatUtc
-        ));
-    }
-
-    // 2. FALLBACK: Nếu Agent đã offline hoặc chưa có trong RAM, mới truy vấn Prometheus TSDB
     var client = clientFactory.CreateClient("Prometheus");
 
     async Task<double> QueryPrometheusMetricAsync(string metricName)
@@ -174,7 +157,7 @@ app.MapGet("/api/hosts/{agentId}/metrics/summary", async (
         }
         catch (Exception ex)
         {
-            app.Logger.LogWarning(ex, "Loi khi truy van Range Query Prometheus cho metric {Metric}: {Message}", metricName, ex.Message);
+            app.Logger.LogWarning(ex, "Loi khi truy van Prometheus summary cho metric {Metric}: {Message}", metricName, ex.Message);
         }
         return 0.0;
     }
