@@ -498,6 +498,9 @@ public partial class AgentMetricsHistoryForm : AntdUI.Window
             ? ScottPlot.Color.FromHex("#2563EB")
             : ScottPlot.Color.FromHex("#10B981");
 
+        // Tự động co giãn cả trục X (thời gian) và Y theo dữ liệu mới
+        _formsPlot.Plot.Axes.AutoScale();
+
         if (_currentMetricType == MetricViewType.Cpu)
         {
             var lineWarn = _formsPlot.Plot.Add.HorizontalLine(60);
@@ -508,11 +511,8 @@ public partial class AgentMetricsHistoryForm : AntdUI.Window
             lineCrit.Color = ScottPlot.Color.FromHex("#EF4444");
             lineCrit.LinePattern = ScottPlot.LinePattern.Dashed;
 
+            // Giữ trục X đã AutoScale, chỉ cố định trục Y trong thang 0% - 100%
             _formsPlot.Plot.Axes.SetLimitsY(0, 100);
-        }
-        else
-        {
-            _formsPlot.Plot.Axes.AutoScale();
         }
 
         _formsPlot.Plot.Axes.DateTimeTicksBottom();
