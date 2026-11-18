@@ -56,6 +56,14 @@ public partial class AgentMetricsHistoryForm : AntdUI.Window
     {
     }
 
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        _queryCts?.Cancel();
+        _queryCts?.Dispose();
+        _queryCts = null;
+        base.OnFormClosed(e);
+    }
+
     private void InitializeFormProperties()
     {
         Text = $"Metrics History — {_hostname}";
@@ -329,6 +337,8 @@ public partial class AgentMetricsHistoryForm : AntdUI.Window
 
     private async Task FetchHistoryDataAsync()
     {
+        //  Giải phóng '_queryCts' khi đóng Form
+        if (IsDisposed || Disposing) return;
         _queryCts?.Cancel();
         _queryCts = new CancellationTokenSource();
         var ct = _queryCts.Token;
@@ -343,6 +353,7 @@ public partial class AgentMetricsHistoryForm : AntdUI.Window
             {
                 // 1. Gọi API thực tế thông qua MetricsApiClient (kèm JWT Bearer Token)
                 var history = await _metricsClient.GetHostMetricsHistoryAsync(_agentId, _currentRange, ct);
+                if (ct.IsCancellationRequested || IsDisposed || Disposing) return;
 
                 if (history is not null && (history.CpuHistory.Count > 0 || history.MemoryHistory.Count > 0 || history.DiskHistory.Count > 0))
                 {
@@ -364,6 +375,7 @@ public partial class AgentMetricsHistoryForm : AntdUI.Window
                     success = true;
                 }
             }
+            if (IsDisposed || Disposing) return;
 
             // 5. Nếu không có dữ liệu thật (Agent offline hoặc Prometheus chưa thu thập)
             if (!success)
@@ -383,13 +395,15 @@ public partial class AgentMetricsHistoryForm : AntdUI.Window
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
+            if (IsDisposed || Disposing) return;
             _lblStatus.Text = "Query failed";
             _formsPlot.Plot.Title($"Error: {ex.Message}");
             _formsPlot.Refresh();
         }
         finally
         {
-            _btnRefresh.Loading = false;
+            if (!IsDisposed && !Disposing)
+                _btnRefresh.Loading = false;
         }
     }
 
