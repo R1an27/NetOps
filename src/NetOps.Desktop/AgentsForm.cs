@@ -39,6 +39,7 @@ public partial class AgentsForm : AntdUI.Window
     private AntdUI.Switch swAutoRefresh = null!;
     private AntdUI.Badge badgeMetricStatus = null!;
     private System.Windows.Forms.Timer tmrMetrics = null!;
+    private CancellationTokenSource? _metricsFetchCts;
     public AgentsForm()
     {
         InitializeComponent();
@@ -315,6 +316,14 @@ public partial class AgentsForm : AntdUI.Window
         if (_lifetimeDisposed)
             return;
         _lifetimeDisposed = true;
+
+        tmrMetrics?.Stop();
+        tmrMetrics?.Dispose();
+
+        _metricsFetchCts?.Cancel();
+        _metricsFetchCts?.Dispose();
+        _metricsFetchCts = null;
+
         _lifetime.Cancel();
         _lifetime.Dispose();
     }
@@ -525,39 +534,51 @@ public partial class AgentsForm : AntdUI.Window
         statsGrid.Controls.Add(pnlDiskCard, 1, 0);
         layout.Controls.Add(statsGrid, 0, 2);
 
-        // --- HÀNG 4: Toolbar (Nút Refresh to đẹp + Công tắc Auto-refresh) ---
+        // --- HÀNG 4: Toolbar (Refresh + History + Auto-refresh) ---
         var actionsPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 3,
+            ColumnCount = 4,
             RowCount = 1,
             Margin = new Padding(0, 4, 0, 0),
             BackColor = Color.Transparent
         };
-        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115F));
-        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        actionsPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-
-        // Cập nhật actionsPanel cho phần Pop-up
-        actionsPanel.ColumnCount = 4;
-        actionsPanel.ColumnStyles.Clear();
         actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 105F)); // Nút Refresh
-        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 105F)); // Nút History (MỚI)
-        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));  // Giãn cách
-        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));      // Auto-refresh switch
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 105F)); // Nút History
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));  // Nhãn Auto-refresh
+        actionsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));       // Switch Auto-refresh
+        actionsPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
         btnRefreshMetrics = new AntdUI.Button
         {
             Text = "Refresh",
-            Width = 110,
+            Width = 100,
             Height = 36,
+            Radius = 6,
             Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
             Type = AntdUI.TTypeMini.Primary,
             Dock = DockStyle.Left,
             Cursor = Cursors.Hand
         };
         btnRefreshMetrics.Click += async (_, _) => await FetchMetricsForSelectedAgentAsync();
+
+        var btnHistory = new AntdUI.Button
+        {
+            Text = "History",
+            Width = 100,
+            Height = 36,
+            Radius = 6,
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+            Type = AntdUI.TTypeMini.Default,
+            Dock = DockStyle.Left,
+            Cursor = Cursors.Hand
+        };
+        btnHistory.Click += (_, _) =>
+        {
+            if (_candidate is null || MetricsClient is null) return;
+            using var historyForm = new AgentMetricsHistoryForm(_candidate, MetricsClient);
+            historyForm.ShowDialog(this);
+        };
 
         var lblAuto = new AntdUI.Label
         {
@@ -577,8 +598,9 @@ public partial class AgentsForm : AntdUI.Window
         swAutoRefresh.CheckedChanged += (_, _) => tmrMetrics.Enabled = swAutoRefresh.Checked;
 
         actionsPanel.Controls.Add(btnRefreshMetrics, 0, 0);
-        actionsPanel.Controls.Add(lblAuto, 1, 0);
-        actionsPanel.Controls.Add(swAutoRefresh, 2, 0);
+        actionsPanel.Controls.Add(btnHistory, 1, 0);
+        actionsPanel.Controls.Add(lblAuto, 2, 0);
+        actionsPanel.Controls.Add(swAutoRefresh, 3, 0);
         layout.Controls.Add(actionsPanel, 0, 4);
 
         // Timer tự động cập nhật mỗi 5 giây
@@ -586,76 +608,77 @@ public partial class AgentsForm : AntdUI.Window
         tmrMetrics.Tick += async (_, _) => await FetchMetricsForSelectedAgentAsync();
 
         pnlMetrics.Controls.Add(layout);
-
-        // Gắn vào hàng 16 của detailLayout
         detailLayout.Controls.Add(pnlMetrics, 0, 16);
-
-        // Tạo thêm nút btnHistory để mở Pop-up
-        var btnHistory = new AntdUI.Button
-        {
-            Text = "History",
-            Width = 100,
-            Height = 36,
-            Radius = 6,
-            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-            Type = AntdUI.TTypeMini.Default,
-            Cursor = Cursors.Hand
-        };
-
-        btnHistory.Click += (_, _) =>
-        {
-            if (_candidate is null || MetricsClient is null) return;
-            using var historyForm = new AgentMetricsHistoryForm(_candidate, MetricsClient);
-            historyForm.ShowDialog(this);
-        };
-
-        // Đặt vào cột 1 của actionsPanel
-        actionsPanel.Controls.Add(btnRefreshMetrics, 0, 0);
-        actionsPanel.Controls.Add(btnHistory, 1, 0);
-        actionsPanel.Controls.Add(lblAuto, 2, 0);
-        actionsPanel.Controls.Add(swAutoRefresh, 3, 0);
     }
 
     // Hàm gọi API và cập nhật số liệu
     private async Task FetchMetricsForSelectedAgentAsync()
     {
-        if (_candidate is null || !_candidate.IsOnline || MetricsClient is null)
+        if (_lifetimeDisposed || IsDisposed || Disposing)
+            return;
+
+        var targetAgent = _candidate;
+        if (targetAgent is null || !targetAgent.IsOnline || MetricsClient is null)
         {
             pnlMetrics.Visible = false;
             return;
         }
+
+        _metricsFetchCts?.Cancel();
+        _metricsFetchCts?.Dispose();
+        _metricsFetchCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        var ct = _metricsFetchCts.Token;
+        var requestedAgentId = targetAgent.AgentId;
 
         try
         {
             btnRefreshMetrics.Loading = true;
             btnRefreshMetrics.Enabled = false;
 
-            // Gọi API lấy dữ liệu từ Prometheus qua MetricsApiClient
-            var metrics = await MetricsClient.GetHostMetricsAsync(_candidate.AgentId);
+            var metrics = await MetricsClient.GetHostMetricsAsync(requestedAgentId, ct);
+
+            // Nếu người dùng đã đổi sang máy khác hoặc đóng Form trong lúc chờ mạng thì bỏ qua
+            if (ct.IsCancellationRequested || _lifetimeDisposed || IsDisposed || Disposing
+                || _candidate?.AgentId != requestedAgentId)
+            {
+                return;
+            }
+
             if (metrics is null)
             {
-                lblCpuTitle.Text = "CPU: —";
+                lblCpuTitle.Text = "—";
                 lblRamValue.Text = "No data";
                 lblDiskValue.Text = "No data";
                 prgCpu.Value = 0;
                 return;
             }
 
-            // 1. Cập nhật CPU và đổi màu cảnh báo theo ngưỡng tải
-            UpdateCpuDisplay(metrics.CpuPercent);
+            // Nếu Agent mới kết nối (< 10s), Prometheus có thể chưa kịp nhận nhịp OTLP đầu tiên
+            if (metrics.CpuPercent <= 0 && metrics.MemoryUsedBytes <= 0 && metrics.DiskFreeBytes <= 0)
+            {
+                lblCpuTitle.Text = "Waiting...";
+                lblRamValue.Text = "Collecting...";
+                lblDiskValue.Text = "Collecting...";
+                prgCpu.Value = 0;
+                return;
+            }
 
-            // 2. Cập nhật RAM và Ổ đĩa (Quy đổi sang GB/MB dễ đọc)
+            UpdateCpuDisplay(metrics.CpuPercent);
             lblRamValue.Text = MetricsFormatter.FormatBytes(metrics.MemoryUsedBytes);
             lblDiskValue.Text = $"{MetricsFormatter.FormatBytes(metrics.DiskFreeBytes)} free";
         }
+        catch (OperationCanceledException) { }
         catch
         {
-            // Bỏ qua lỗi mạng
+            // Bỏ qua lỗi mạng tạm thời
         }
         finally
         {
-            btnRefreshMetrics.Loading = false;
-            btnRefreshMetrics.Enabled = true;
+            if (!_lifetimeDisposed && !IsDisposed && !Disposing)
+            {
+                btnRefreshMetrics.Loading = false;
+                btnRefreshMetrics.Enabled = true;
+            }
         }
     }
 

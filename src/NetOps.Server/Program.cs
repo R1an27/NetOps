@@ -242,7 +242,7 @@ app.MapGet("/api/hosts/{agentId}/metrics/history", async (
                             string? valStr = p[1]?.ToString();
                             if (double.TryParse(valStr, System.Globalization.CultureInfo.InvariantCulture, out double val))
                             {
-                                var time = DateTimeOffset.FromUnixTimeSeconds(sec).LocalDateTime;
+                                var time = DateTimeOffset.FromUnixTimeSeconds(sec).UtcDateTime;
                                 resultList.Add(new MetricPointDto(time, val));
                             }
                         }
@@ -283,8 +283,8 @@ app.MapGet("/api/hosts/{agentId}/metrics/history", async (
         MaxCpuPercent: maxCpu,
         AvgCpuPercent: avgCpu,
         PeakMemoryUsedBytes: peakMem,
-        StartTime: DateTimeOffset.FromUnixTimeSeconds(startUnix).LocalDateTime,
-        EndTime: DateTimeOffset.FromUnixTimeSeconds(endUnix).LocalDateTime
+        StartTime: DateTimeOffset.FromUnixTimeSeconds(startUnix).UtcDateTime,
+        EndTime: DateTimeOffset.FromUnixTimeSeconds(endUnix).UtcDateTime
     );
 
     return Results.Ok(responseDto);
