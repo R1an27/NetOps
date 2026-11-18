@@ -1,0 +1,101 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:?Set KC_DB_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?Set KC_DB_PASSWORD in .env}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:?Set KC_ADMIN_USER in .env}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?Set KC_ADMIN_PASSWORD in .env}
+      KC_HOSTNAME: ${KC_HOSTNAME:?Set KC_HOSTNAME in .env}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:?Set RABBITMQ_PASS in .env}
+    ports:
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:v3.0.0
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-otlp-receiver"
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  netops-server:
+    # Kiếm Dockerfile ở . để build
+    build: .
+    # Gắn label image sau khi build xong
+    image: netops-server:0.1.0-preview.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: "8080"
+      # Tắt IPv6
+      DOTNET_SYSTEM_NET_DISABLEIPV6: "1"
+      # Ở đây dùng __ là vì POSIX không cho phép dấu : trong tên biến môi trường 
+      ConnectionStrings__rabbitmq: "rabbitmq://${RABBITMQ_USER:?Set RABBITMQ_USER in .env}:${RABBITMQ_PASS:?Set RABBITMQ_PASS in .env}@rabbitmq:5672"
+      Prometheus__BaseUrl: "http://prometheus:9090"
+      Keycloak__realm: netops
+      # Dò trong .env đấy (học IT007 là bt)
+      Keycloak__auth-server-url: "${KC_HOSTNAME:?Set KC_HOSTNAME in .env}/"
+      Keycloak__ssl-required: external
+      Keycloak__resource: netops-backend
+      Keycloak__verify-token-audience: "true"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+      keycloak:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  prometheus_data:
