@@ -19,12 +19,34 @@ public partial class Form1 : AntdUI.Window
     // Giá trị sẽ thay đổi sau khi đăng nhập, nên field này không đặt readonly.
     // Vì sao phải giữ trong field? Vì chúng ta nhận token trong OnShown(), nhưng phần cấu hình SignalR cũng cần đọc được nó.
     private string? _accessToken;
+    private string? _identityToken; // <-- Thêm field này để lưu id_token_hint cho việc Logout
     private bool _connecting;
     private int _outputLineCount;
+    private AntdUI.Button btnLogout;
 
     public Form1()
     {
         InitializeComponent();
+        btnLogout = new AntdUI.Button
+        {
+            Text = "Logout",
+            Radius = 7,
+            Cursor = Cursors.Hand,
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+            BorderWidth = 1F,
+            DefaultBack = Color.FromArgb(254, 242, 242),
+            DefaultBorderColor = Color.FromArgb(254, 202, 202),
+            ForeColor = Color.FromArgb(185, 28, 28),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(6, 0, 0, 0),
+            Enabled = false
+        };
+        btnLogout.Click += btnLogout_Click;
+        headingLayout.ColumnStyles[1].Width = 390F;
+        connectionLayout.ColumnCount = 3;
+        connectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 85F));
+        connectionLayout.Controls.Add(btnLogout, 2, 0);
+        connectionLayout.SetRowSpan(btnLogout, 2);
 
         // Tạo một đối tượng chứa cấu hình đăng nhập, rồi giữ nó trong biến options.
         var options = new OidcClientOptions
@@ -227,7 +249,10 @@ public partial class Form1 : AntdUI.Window
         // Microsoft yêu cầu giữ lời gọi base.OnShown(e) khi ghi đè phương thức này.
         // https://learn.microsoft.com/en-us/dotnet/api/system.windows.forms.form.onshown?view=windowsdesktop-10.0
         base.OnShown(e);
-
+        await SignInAsync();
+    }
+    private async Task SignInAsync()
+    {
         // [1.2] Thay riêng phương thức OnShown
         try
         {
@@ -261,9 +286,12 @@ public partial class Form1 : AntdUI.Window
                 // Khối catch phía cuối xử lý những ngoại lệ phát sinh trong quá trình thực hiện, chẳng hạn lỗi mở bộ nhận callback.
             }
 
+
+
             // [2.2] Lấy token từ kết quả đăng nhập
             // Lấy chuỗi access token từ kết quả đăng nhập và giữ nó trong field _accessToken của Form.
             _accessToken = result.AccessToken;
+            _identityToken = result.IdentityToken; // Lưu id token cho Logout
 
             // [1.5] Đọc tên tài khoản từ đâu?
             // Sau khi thành công, result.User chứa thông tin danh tính dưới dạng các claim.
@@ -287,6 +315,10 @@ public partial class Form1 : AntdUI.Window
                 this,
                 $"Signed in as {username}.",
                 "NetOps");
+            // Bật các nút sau khi đăng nhập thành công
+            btnConnect.Enabled = true;
+            if (btnLogout != null)
+                btnLogout.Enabled = true;
             // Khi bạn bấm OK trên hộp thoại, chương trình tiếp tục chạy:
             // Sau đó bắt đầu kết nối,
             // rồi chờ kết nối bằng await.
@@ -300,12 +332,84 @@ public partial class Form1 : AntdUI.Window
             SetStatus($"Sign-in failed: {ex.Message}", true);
         }
     }
+        
+      private async void btnLogout_Click(object? sender, EventArgs e)
+    {
+        await SignOutAsync();
+    }
+    private async Task SignOutAsync()
+    {
+        // 1. Xác nhận từ người dùng
+        var confirm = MessageBox.Show(
+            this,
+            "Bạn có chắc chắn muốn đăng xuất khỏi NetOps không?",
+            "Xác nhận đăng xuất",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
 
+        if (confirm != DialogResult.Yes)
+            return;
+
+        SetStatus("Logging out...");
+
+        // 2. LƯU TẠM ID TOKEN ĐỂ GỬI KEYCLOAK, RỒI XOÁ TOKEN NGAY ĐỂ TRÁNH BỊ GHI ĐÈ GIAO DIỆN
+        var idToken = _identityToken;
+        _accessToken = null;
+        _identityToken = null;
+
+        // 3. ĐƯA GIAO DIỆN VỀ TRẠNG THÁI "LOGGED OUT" VÀ NÚT "SIGN IN" NGAY LẬP TỨC
+        _agents.Clear();
+        txtAgentId.Text = string.Empty;
+        txtCommand.Text = string.Empty;
+        txtResult.Clear();
+        _outputLineCount = 0;
+        UpdateOutputControls();
+
+        badgeConnection.Text = "Logged out";
+        badgeConnection.State = AntdUI.TState.Default;
+        SetStatus("Logged out successfully. Click 'Sign In' to log in again.");
+
+        btnConnect.Text = "Sign In";
+        btnConnect.Enabled = true; // Sáng nút Sign In để người dùng có thể bấm đăng nhập lại
+        btnSend.Enabled = false;
+        if (btnLogout != null)
+            btnLogout.Enabled = false; // Mờ nút Logout đi
+
+        try
+        {
+            // 4. Ngắt kết nối SignalR (Lúc này _accessToken đã null nên OnConnectionClosedAsync sẽ bỏ qua, không bị đè chữ Disconnected)
+            if (_hubConnection.State == HubConnectionState.Connected)
+            {
+                await _hubConnection.StopAsync();
+            }
+
+            // 5. Đăng xuất phiên SSO trên Keycloak
+            if (!string.IsNullOrEmpty(idToken))
+            {
+                var logoutRequest = new LogoutRequest
+                {
+                    IdTokenHint = idToken
+                };
+
+                await _oidcClient.LogoutAsync(logoutRequest);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Logout error: {ex.Message}");
+        }
+    }
     private async void btnConnect_Click(object? sender, EventArgs e)
     {
-        await ConnectToServerAsync();
+        if (string.IsNullOrWhiteSpace(_accessToken))
+        {
+            await SignInAsync();
+        }
+        else
+        {
+            await ConnectToServerAsync();
+        }
     }
-
     private void SetConnectionState(bool connected, string text, AntdUI.TState state)
     {
         badgeConnection.Text = text;
@@ -319,6 +423,8 @@ public partial class Form1 : AntdUI.Window
     {
         return RunOnUiAsync(() =>
         {
+            if (string.IsNullOrEmpty(_accessToken))
+                return;
             SetConnectionState(false, "Disconnected", AntdUI.TState.Error);
             SetStatus("Connection lost. Click Connect to reconnect to the server.", true);
         });
