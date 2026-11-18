@@ -39,6 +39,7 @@ public partial class AgentsForm : AntdUI.Window
     private AntdUI.Switch swAutoRefresh = null!;
     private AntdUI.Badge badgeMetricStatus = null!;
     private System.Windows.Forms.Timer tmrMetrics = null!;
+    private CancellationTokenSource? _metricsFetchCts;
     public AgentsForm()
     {
         InitializeComponent();
@@ -315,6 +316,14 @@ public partial class AgentsForm : AntdUI.Window
         if (_lifetimeDisposed)
             return;
         _lifetimeDisposed = true;
+
+        tmrMetrics?.Stop();
+        tmrMetrics?.Dispose();
+
+        _metricsFetchCts?.Cancel();
+        _metricsFetchCts?.Dispose();
+        _metricsFetchCts = null;
+
         _lifetime.Cancel();
         _lifetime.Dispose();
     }
