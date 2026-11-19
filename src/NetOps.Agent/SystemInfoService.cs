@@ -62,24 +62,28 @@ public static class SystemInfoService
         return GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
     }
 
-    // 6. Lấy hoặc tạo Agent ID ổn định giữa các lần khởi động lại.
-    // Thứ tự chọn thư mục lưu agent-id.txt:
+    // Agent đọc agent-id.txt và client-secret.txt từ cùng thư mục riêng của máy.
+    // Thứ tự chọn thư mục:
     //   1. Biến môi trường NETOPS_DATA_DIR (ví dụ /var/lib/netops-agent khi chạy systemd service trên Linux).
     //   2. Thư mục LocalApplicationData (trên Windows là %LOCALAPPDATA%\NetOps\Agent).
     //   3. Dự phòng AppContext.BaseDirectory nếu chạy dưới service Linux không có biến $HOME (tránh đường dẫn rỗng).
-    public static string GetAgentId()
+    public static string GetDataDirectory()
     {
         var customDir = Environment.GetEnvironmentVariable("NETOPS_DATA_DIR");
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
-        var folder = !string.IsNullOrWhiteSpace(customDir)
+        return !string.IsNullOrWhiteSpace(customDir)
             ? customDir.Trim()
             : !string.IsNullOrWhiteSpace(localAppData)
                 ? Path.Combine(localAppData, "NetOps", "Agent")
                 : Path.Combine(AppContext.BaseDirectory, "data");
+    }
 
+    // Giữ ID cũ qua các lần nâng cấp vì quản trị viên dùng chính ID này làm Client ID trong Keycloak.
+    public static string GetAgentId()
+    {
+        var folder = GetDataDirectory();
         Directory.CreateDirectory(folder);
-
         var filePath = Path.Combine(folder, "agent-id.txt");
 
         if (File.Exists(filePath))
