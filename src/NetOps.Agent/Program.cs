@@ -7,6 +7,14 @@ using NetOps.Agent.Services;
 using NetOps.Shared;
 
 const string DefaultHubUrl = "https://api.r1antech.online/hubs/agents";
+const string DefaultTokenUrl = "https://auth.r1antech.online/realms/netops/protocol/openid-connect/token";
+
+// Dùng lúc cấp quyền lần đầu. Lệnh này chỉ in ID của máy rồi thoát, chưa mở kết nối mạng.
+if (args is ["--show-id"])
+{
+    Console.WriteLine(SystemInfoService.GetAgentId());
+    return;
+}
 
 var cliHubUrl = args.FirstOrDefault(arg => !string.IsNullOrWhiteSpace(arg));
 var envHubUrl = Environment.GetEnvironmentVariable("NETOPS_HUB_URL");
@@ -16,10 +24,22 @@ var hubUrl = !string.IsNullOrWhiteSpace(cliHubUrl)
         ? envHubUrl
         : DefaultHubUrl;
 
-if (!Uri.TryCreate(hubUrl, UriKind.Absolute, out var hubUri)
-    || (hubUri.Scheme != Uri.UriSchemeHttps && !(hubUri.Scheme == Uri.UriSchemeHttp && hubUri.IsLoopback)))
+if (!Uri.TryCreate(hubUrl, UriKind.Absolute, out var hubUri) || !CanSendCredentialsTo(hubUri))
 {
     Console.Error.WriteLine("Hub URL phai dung HTTPS; HTTP chi duoc dung tren localhost.");
+    Environment.ExitCode = 1;
+    return;
+}
+
+// Secret chỉ gửi đến Keycloak của môi trường đang dùng. Khi đổi Server, người cài
+// cần đặt NETOPS_TOKEN_URL để tránh gửi secret của lab đến Keycloak mặc định.
+var tokenUrl = Environment.GetEnvironmentVariable("NETOPS_TOKEN_URL");
+if (tokenUrl is null && hubUri.Authority == new Uri(DefaultHubUrl).Authority)
+    tokenUrl = DefaultTokenUrl;
+
+if (!Uri.TryCreate(tokenUrl, UriKind.Absolute, out var tokenUri) || !CanSendCredentialsTo(tokenUri))
+{
+    Console.Error.WriteLine("Hãy đặt NETOPS_TOKEN_URL tới endpoint cấp token của Keycloak. Dùng HTTPS, hoặc HTTP trên localhost.");
     Environment.ExitCode = 1;
     return;
 }
@@ -29,6 +49,13 @@ var executorLogger = loggerFactory.CreateLogger<CommandExecutor>();
 var commandExecutor = new CommandExecutor(executorLogger);
 
 var info = SystemInfoService.GetRegistrationInfo();
+var secretPath = Path.Combine(SystemInfoService.GetDataDirectory(), "client-secret.txt");
+if (!File.Exists(secretPath))
+{
+    Console.Error.WriteLine($"Hãy cấp Client ID {info.AgentId} trong Keycloak và lưu secret của máy vào {secretPath}.");
+    Environment.ExitCode = 1;
+    return;
+}
 Console.WriteLine($"Agent {info.Hostname} (ID: {info.AgentId}). Nhan Ctrl+C de dung.");
 
 using var shutdown = new CancellationTokenSource();
@@ -46,8 +73,16 @@ using var sigTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx =>
     shutdown.Cancel();
 });
 
+// Dùng lại HttpClient cho các lần xin token. Tắt chuyển hướng để một phản hồi HTTP
+// không thể chuyển tiếp yêu cầu chứa client_secret sang địa chỉ khác.
+using var keycloak = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
 await using var connection = new HubConnectionBuilder()
-    .WithUrl(hubUri, HttpTransportType.WebSockets)
+    .WithUrl(hubUri, HttpTransportType.WebSockets, options =>
+    {
+        // Mỗi lần mở lại kết nối, SignalR gọi hàm này để lấy access token cho header Authorization.
+        options.AccessTokenProvider = () =>
+            AgentTokenClient.RequestAsync(keycloak, tokenUri, info.AgentId, secretPath, shutdown.Token);
+    })
     .Build();
 
 // Ổ khóa chỉ cho phép chạy tuần tự từng lệnh một trên Agent này,
@@ -120,6 +155,11 @@ catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
 {
     // Ctrl+C cũng có thể đến trong lúc chờ thử kết nối lại.
 }
+
+// Cả secret gửi đến Keycloak và token gửi đến Hub đều cần đường truyền mã hóa.
+// HTTP trên loopback vẫn dùng được khi chạy các dịch vụ trên cùng máy phát triển.
+static bool CanSendCredentialsTo(Uri uri) =>
+    uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback);
 
 static async Task ExecuteAssignedCommandAsync(
     CommandExecutor executor,
