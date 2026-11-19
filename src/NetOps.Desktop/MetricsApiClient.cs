@@ -16,12 +16,6 @@ public class MetricsApiClient
     {
         _tokenProvider = tokenProvider;
 
-        // Bỏ qua lỗi SSL Certificate tự ký trong môi trường phát triển cục bộ (localhost)
-        var handler = new HttpClientHandler
-        {
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-        };
-
         // Khởi tạo HttpClient có sử dụng handler bỏ qua SSL
         _httpClient = new HttpClient(handler)
         {
