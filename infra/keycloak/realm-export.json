@@ -800,7 +800,8 @@
         "display.on.consent.screen": "false",
         "request.object.encryption.enc": "any",
         "pkce.code.challenge.method": "S256",
-        "token.response.type.bearer.lower-case": "false"
+        "token.response.type.bearer.lower-case": "false",
+        "post.logout.redirect.uris": "+"
       },
       "authenticationFlowBindingOverrides": {},
       "fullScopeAllowed": true,

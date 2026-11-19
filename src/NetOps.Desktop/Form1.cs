@@ -56,6 +56,7 @@ public partial class Form1 : AntdUI.Window
             ClientId = "netops-desktop",
             // Nơi nhận kết quả
             RedirectUri = "http://127.0.0.1:7890/",
+            PostLogoutRedirectUri = "http://127.0.0.1:7890/",
             // Thông tin yêu cầu: đăng nhập, hồ sơ cơ bản và email
             // Danh sách scope này phục vụ việc yêu cầu thông tin trong quy trình đăng nhập.
             Scope = "openid profile email",
@@ -338,7 +339,6 @@ public partial class Form1 : AntdUI.Window
     }
     private async Task SignOutAsync()
     {
-        // 1. Xác nhận từ người dùng
         var confirm = MessageBox.Show(
             this,
             "Bạn có chắc chắn muốn đăng xuất khỏi NetOps không?",
@@ -349,14 +349,57 @@ public partial class Form1 : AntdUI.Window
         if (confirm != DialogResult.Yes)
             return;
 
-        SetStatus("Logging out...");
-
-        // 2. LƯU TẠM ID TOKEN ĐỂ GỬI KEYCLOAK, RỒI XOÁ TOKEN NGAY ĐỂ TRÁNH BỊ GHI ĐÈ GIAO DIỆN
+        // 1. Giữ tạm id_token rồi xóa phiên cục bộ ngay
         var idToken = _identityToken;
         _accessToken = null;
         _identityToken = null;
 
-        // 3. ĐƯA GIAO DIỆN VỀ TRẠNG THÁI "LOGGED OUT" VÀ NÚT "SIGN IN" NGAY LẬP TỨC
+        // 2. Khóa các nút và dọn giao diện trước khi gọi mạng
+        btnLogout.Enabled = false;
+        btnConnect.Enabled = false;
+        btnSend.Enabled = false;
+        ResetUiAfterLogout();
+        SetStatus("Logging out...");
+
+        try
+        {
+            // 3. Ngắt SignalR (kể cả khi đang Connecting/Reconnecting)
+            if (_hubConnection.State != HubConnectionState.Disconnected)
+                await _hubConnection.StopAsync();
+
+            // 4. Đăng xuất phiên SSO trên Keycloak
+            if (!string.IsNullOrEmpty(idToken))
+            {
+                var result = await _oidcClient.LogoutAsync(new LogoutRequest
+                {
+                    IdTokenHint = idToken
+                });
+
+                if (result.IsError)
+                {
+                    SetStatus($"Local sign-out done, Keycloak logout failed: {result.Error}", true);
+                    return;
+                }
+            }
+
+            SetStatus("Logged out successfully. Click 'Sign In' to log in again.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Local sign-out done, error during SSO logout: {ex.Message}", true);
+        }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                btnConnect.Text = "Sign In";
+                btnConnect.Enabled = true;
+            }
+        }
+    }
+
+    private void ResetUiAfterLogout()
+    {
         _agents.Clear();
         txtAgentId.Text = string.Empty;
         txtCommand.Text = string.Empty;
@@ -366,37 +409,8 @@ public partial class Form1 : AntdUI.Window
 
         badgeConnection.Text = "Logged out";
         badgeConnection.State = AntdUI.TState.Default;
-        SetStatus("Logged out successfully. Click 'Sign In' to log in again.");
-
-        btnConnect.Text = "Sign In";
-        btnConnect.Enabled = true; // Sáng nút Sign In để người dùng có thể bấm đăng nhập lại
-        btnSend.Enabled = false;
-        if (btnLogout != null)
-            btnLogout.Enabled = false; // Mờ nút Logout đi
-
-        try
-        {
-            // 4. Ngắt kết nối SignalR (Lúc này _accessToken đã null nên OnConnectionClosedAsync sẽ bỏ qua, không bị đè chữ Disconnected)
-            if (_hubConnection.State == HubConnectionState.Connected)
-            {
-                await _hubConnection.StopAsync();
-            }
-
-            // 5. Đăng xuất phiên SSO trên Keycloak
-            if (!string.IsNullOrEmpty(idToken))
-            {
-                var logoutRequest = new LogoutRequest
-                {
-                    IdTokenHint = idToken
-                };
-
-                await _oidcClient.LogoutAsync(logoutRequest);
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Logout error: {ex.Message}");
-        }
+        badgeOutput.Text = "Waiting for output";
+        badgeOutput.State = AntdUI.TState.Default;
     }
     private async void btnConnect_Click(object? sender, EventArgs e)
     {

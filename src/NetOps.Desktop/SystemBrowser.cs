@@ -40,8 +40,7 @@ public class SystemBrowser : IBrowser
         // Cách khai báo đường dẫn bằng MapGet thuộc Minimal APIs của ASP.NET Core.
         app.MapGet("/", async (HttpContext context) =>
         {
-            await context.Response.WriteAsync(
-                "Login response received. You can return to NetOps.");
+            await context.Response.WriteAsync("Done. You can close this tab and return to NetOps.");
 
             // [2] Nơi cung cấp kết quả
             // TrySetResult(...) đưa chuỗi (bên dưới á) vào phiếu hẹn.
