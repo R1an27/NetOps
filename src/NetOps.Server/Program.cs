@@ -128,7 +128,16 @@ app.UseAuthorization();
 app.MapHub<AgentHubService>("/hubs/agents");
 
 // -- API của Prometheus --
-// Chỉ cho phép agentId gồm chữ, số, '.', '_', '-' (tối đa 128 ký tự) để chống PromQL Injection
+// Bộ lọc kiểm tra định dạng agentId để chống tấn công PromQL Injection.
+// Vì sao cần bước này?
+// Bên dưới ta ghép trực tiếp agentId vào câu truy vấn Prometheus: system_cpu_utilization_percent{host_id="{agentId}"}
+// Nếu kẻ xấu cố tình gửi agentId chứa ký tự đặc biệt như:  abc"} or up{a="
+// thì câu truy vấn bị phá vỡ cấu trúc và có thể đọc trộm dữ liệu của máy khác hoặc làm quá tải Prometheus.
+// Giải thích biểu thức Regex @"^[a-zA-Z0-9._-]{1,128}$":
+//   ^ và $           : kiểm tra toàn bộ chuỗi từ ký tự đầu đến ký tự cuối (không cho lọt ký tự lạ ở giữa/cuối)
+//   [a-zA-Z0-9._-]   : chỉ cho phép chữ cái, chữ số, dấu chấm, gạch dưới và gạch ngang (chặn sạch ", \, {, }, khoảng trắng...)
+//   {1,128}          : độ dài bắt buộc từ 1 đến 128 ký tự (khớp giới hạn lúc Agent đăng ký)
+//   RegexOptions.Compiled : biên dịch sẵn regex 1 lần khi Server khởi động để kiểm tra nhanh hơn ở mọi request sau đó.
 var validAgentIdRegex = new Regex(@"^[a-zA-Z0-9._-]{1,128}$", RegexOptions.Compiled);
 
 // Endpoint tra cứu nhanh chỉ số mới nhất của 1 máy
@@ -136,6 +145,7 @@ app.MapGet("/api/hosts/{agentId}/metrics/summary", async (
     string agentId,
     IHttpClientFactory clientFactory) =>
 {
+    // Từ chối ngay bằng mã 400 Bad Request nếu agentId rỗng hoặc chứa ký tự không hợp lệ trước khi ghép vào PromQL.
     if (string.IsNullOrWhiteSpace(agentId) || !validAgentIdRegex.IsMatch(agentId))
         return Results.BadRequest("AgentId không hợp lệ.");
 
@@ -197,6 +207,7 @@ app.MapGet("/api/hosts/{agentId}/metrics/history", async (
     string? range,
     IHttpClientFactory clientFactory) =>
 {
+    // Kiểm tra agentId giống endpoint summary: chặn ký tự lạ trước khi ghép vào câu truy vấn PromQL bên dưới.
     if (string.IsNullOrWhiteSpace(agentId) || !validAgentIdRegex.IsMatch(agentId))
         return Results.BadRequest("AgentId không hợp lệ.");
 

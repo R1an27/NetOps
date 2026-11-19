@@ -65,8 +65,15 @@ public class NetOpsHub : Hub
         if (!_connections.TryGetConnection(agentId, out var connection) || connection is null)
             throw new HubException("Không tìm thấy kết nối của Agent.");
 
-        // Lưu route bằng chính ConnectionId hiện tại kèm TTL (Timeout + 60s dự phòng)
-        // để output trả về nhanh vẫn định tuyến đúng về Desktop và tránh rò rỉ bộ nhớ nếu Agent mất kết nối.
+        // Lưu địa chỉ trả kết quả vào RAM (IMemoryCache): "command:<CommandId>" -> ConnectionId của máy Desktop này.
+        // Phân biệt rõ:
+        // - RabbitMQ (bên dưới) giữ NỘI DUNG LỆNH để xếp hàng gửi xuống Agent.
+        // - IMemoryCache (dòng này) giữ ĐỊA CHỈ NGƯỜI GỬI để lát nữa Agent trả output về (chỉ có CommandId),
+        //   AgentHubService tra bảng này biết phải chuyển output về đúng cửa sổ Desktop nào.
+        // Phải lưu TRƯỚC khi đẩy vào RabbitMQ phòng trường hợp Agent chạy quá nhanh trả kết quả về ngay lập tức.
+        // Đặt thời hạn tự xóa (TTL) = TimeoutSeconds + 60 giây dự phòng:
+        //   - Đủ dài để không bao giờ bị xóa nhầm khi lệnh hợp lệ còn đang chạy.
+        //   - Đảm bảo tự dọn sạch RAM nếu Agent sập nguồn/mất mạng giữa chừng mà không kịp gửi gói IsCompleted = true.
         var commandId = Guid.NewGuid().ToString("N");
         var cacheKey = $"command:{commandId}";
         _cache.Set(cacheKey, Context.ConnectionId, TimeSpan.FromSeconds(request.TimeoutSeconds + 60));

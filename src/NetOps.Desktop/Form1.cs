@@ -12,12 +12,34 @@ public partial class Form1 : AntdUI.Window
 
     private readonly HubConnection _hubConnection;
     private readonly OidcClient _oidcClient;
+
+    // Tạo duy nhất 1 bộ gọi API Metrics dùng chung trong suốt thời gian Form1 mở.
+    // Vì sao không tạo mới (new MetricsApiClient) mỗi lần bấm mở cửa sổ chọn Agent?
+    // Vì bên trong MetricsApiClient có giữ một HttpClient (quản lý các kết nối mạng/socket).
+    // Nếu mỗi lần mở cửa sổ lại new mới mà không giải phóng thì sẽ gây rò rỉ kết nối mạng (socket leak).
     private readonly MetricsApiClient _metricsClient;
+
+    // SemaphoreSlim(1, 1) là gì?
+    // Hiểu đơn giản: đây là một "ổ khóa" chỉ cho phép tối đa 1 luồng (1 người) đi qua cùng lúc.
+    // Vì sao cần ổ khóa này khi làm mới (refresh) token?
+    // Giả sử đúng lúc Access Token sắp hết hạn, cả SignalR và nút tải Metrics cùng gọi xin token 1 lúc:
+    //   - Không có khóa: cả 2 luồng cùng gọi Keycloak xin gia hạn token -> tốn mạng, dễ đè token nhau.
+    //   - Có khóa (1, 1): luồng 1 vào gọi Keycloak làm mới xong, luồng 2 đứng đợi;
+    //     tới lượt luồng 2 vào thấy token đã mới rồi thì lấy dùng luôn, không gọi Keycloak lần 2.
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
 
+    // Bộ 4 thông tin phiên đăng nhập hiện tại (nullable ? vì lúc mới mở app thì chưa đăng nhập):
+    // - _accessToken: "vé vào cửa" gửi kèm lên NetOps.Server để chứng minh đã đăng nhập.
+    //   Trên Keycloak, vé này chỉ sống 5 phút (300 giây) để giảm rủi ro nếu bị lộ.
+    // - _refreshToken: "vé đổi vé mới" có hạn dài hơn (mặc định 30 phút không hoạt động).
+    //   Khi _accessToken sắp hết hạn, app tự lấy _refreshToken gọi ngầm Keycloak đổi lấy _accessToken mới
+    //   mà người dùng KHÔNG cần đăng nhập lại.
+    // - _identityToken (id_token): chứa thông tin định danh phiên SSO, gửi kèm cho Keycloak lúc Logout
+    //   để Keycloak biết chính xác phải đăng xuất phiên nào (không hỏi lại người dùng).
+    // - _accessTokenExpiresAt: mốc thời gian _accessToken sẽ hết hạn, để biết khi nào cần tự gia hạn.
     private string? _accessToken;
     private string? _refreshToken;
-    private string? _identityToken; // Lưu id_token_hint cho việc Logout
+    private string? _identityToken;
     private DateTimeOffset _accessTokenExpiresAt;
     private bool _connecting;
     private int _outputLineCount;
@@ -53,8 +75,11 @@ public partial class Form1 : AntdUI.Window
             Authority = KeycloakAuthority,
             // Ứng dụng yêu cầu: netops-desktop
             ClientId = "netops-desktop",
-            // Nơi nhận kết quả
+            // Nơi nhận kết quả sau khi Login xong (trình duyệt gọi về mini server ở cổng 7890)
             RedirectUri = "http://127.0.0.1:7890/",
+            // Nơi Keycloak chuyển trình duyệt về sau khi Logout xong.
+            // Bắt buộc phải khai báo dòng này (và bật tương ứng trên Keycloak client) thì _oidcClient.LogoutAsync()
+            // mới biết mở mini server ở địa chỉ nào để nhận tín hiệu "đã đăng xuất SSO thành công".
             PostLogoutRedirectUri = "http://127.0.0.1:7890/",
             // Thông tin yêu cầu: đăng nhập, hồ sơ cơ bản và email
             // Danh sách scope này phục vụ việc yêu cầu thông tin trong quy trình đăng nhập.
@@ -63,9 +88,22 @@ public partial class Form1 : AntdUI.Window
             Browser = new SystemBrowser()
         };
 
+        // Tạo công cụ đăng nhập/đăng xuất/gia hạn token với Keycloak từ cấu hình trên.
         _oidcClient = new OidcClient(options);
+
+        // Khởi tạo 1 MetricsApiClient dùng chung cho toàn app.
+        // Truyền hàm GetValidAccessTokenAsync vào làm "nhà cung cấp token":
+        // mỗi lần gọi API Metrics, nó sẽ gọi hàm này để luôn lấy được token CÒN HẠN (tự refresh nếu cần).
         _metricsClient = new MetricsApiClient(ServerBaseUrl, GetValidAccessTokenAsync);
 
+        // Tạo cấu hình kết nối SignalR tới Server (chưa kết nối thật cho tới khi gọi StartAsync()).
+        // AccessTokenProvider dùng chung hàm GetValidAccessTokenAsync():
+        //   Constructor chạy -> đăng ký hàm lấy token (lúc này chưa gọi)
+        //          ↓
+        //   Đăng nhập xong -> lưu _accessToken, _refreshToken, _accessTokenExpiresAt
+        //          ↓
+        //   Connect / Reconnect -> SignalR tự gọi GetValidAccessTokenAsync()
+        //                       -> nếu token sắp hết hạn thì tự gia hạn trước khi gửi lên Server.
         _hubConnection = new HubConnectionBuilder()
             .WithUrl($"{ServerBaseUrl}/hubs/netops", connectionOptions =>
             {
@@ -250,7 +288,10 @@ public partial class Form1 : AntdUI.Window
 
 
 
-            // Lưu bộ token sau khi đăng nhập thành công
+            // Lưu toàn bộ thông tin phiên vừa nhận từ Keycloak sau khi đăng nhập thành công:
+            // - AccessToken + AccessTokenExpiration: dùng gửi lên Server và canh giờ tự gia hạn.
+            // - RefreshToken: dùng xin AccessToken mới sau mỗi ~5 phút.
+            // - IdentityToken: dùng gửi lại cho Keycloak lúc bấm Logout để xóa phiên SSO.
             _accessToken = result.AccessToken;
             _refreshToken = result.RefreshToken;
             _identityToken = result.IdentityToken;
@@ -302,6 +343,7 @@ public partial class Form1 : AntdUI.Window
     }
     private async Task SignOutAsync()
     {
+        // Hỏi xác nhận trước để tránh người dùng bấm nhầm nút Logout.
         var confirm = MessageBox.Show(
             this,
             "Bạn có chắc chắn muốn đăng xuất khỏi NetOps không?",
@@ -312,14 +354,22 @@ public partial class Form1 : AntdUI.Window
         if (confirm != DialogResult.Yes)
             return;
 
-        // 1. Giữ tạm id_token rồi xóa phiên cục bộ ngay
+        // 1. Copy tạm id_token ra biến cục bộ rồi xóa sạch toàn bộ token trong Form NGAY LẬP TỨC.
+        // Vì sao phải xóa trước khi gọi StopAsync() và LogoutAsync()?
+        // - Khi gọi _hubConnection.StopAsync(), sự kiện OnConnectionClosedAsync sẽ kích hoạt.
+        //   Vì _accessToken đã là null, OnConnectionClosedAsync biết đây là chủ động đăng xuất
+        //   nên sẽ bỏ qua, không ghi đè trạng thái thành "Disconnected" màu đỏ.
+        // - Nếu đúng lúc đó có luồng nào đang tự refresh token ngầm, việc _refreshToken bị xóa về null
+        //   sẽ làm luồng refresh đó tự hủy, không ghi đè lại token cũ sau khi đã đăng xuất.
         var idToken = _identityToken;
         _accessToken = null;
         _refreshToken = null;
         _identityToken = null;
         _accessTokenExpiresAt = default;
 
-        // 2. Khóa các nút và dọn giao diện trước khi gọi mạng
+        // 2. Khóa tất cả nút bấm và dọn sạch dữ liệu cũ trên màn hình trước khi chạy các thao tác mạng.
+        // Đặc biệt phải khóa btnConnect trong lúc đang logout: nếu để sáng ngay mà người dùng bấm Sign In
+        // trong khi trình duyệt logout vẫn đang chiếm cổng 7890 thì sẽ bị đụng cổng (port conflict).
         btnLogout.Enabled = false;
         btnConnect.Enabled = false;
         btnSend.Enabled = false;
@@ -328,18 +378,23 @@ public partial class Form1 : AntdUI.Window
 
         try
         {
-            // 3. Ngắt SignalR (kể cả khi đang Connecting/Reconnecting)
+            // 3. Ngắt kết nối SignalR khỏi Server.
+            // Kiểm tra != Disconnected (thay vì chỉ == Connected) để ngắt được cả lúc đang Connecting/Reconnecting.
             if (_hubConnection.State != HubConnectionState.Disconnected)
                 await _hubConnection.StopAsync();
 
-            // 4. Đăng xuất phiên SSO trên Keycloak
+            // 4. Đăng xuất phiên SSO trên trình duyệt (Keycloak).
+            // Nếu chỉ xóa token trong app mà bỏ bước này, cookie đăng nhập trên trình duyệt vẫn còn sống,
+            // lần sau bấm Sign In sẽ tự đăng nhập lại tài khoản cũ mà không đổi được tài khoản khác.
             if (!string.IsNullOrEmpty(idToken))
             {
                 var result = await _oidcClient.LogoutAsync(new LogoutRequest
                 {
+                    // Gửi kèm id_token để Keycloak xác nhận đúng phiên cần đóng và tự redirect về cổng 7890.
                     IdTokenHint = idToken
                 });
 
+                // Nếu Keycloak báo lỗi (ví dụ sai PostLogoutRedirectUri hoặc mất mạng), hiển thị rõ cho người dùng biết.
                 if (result.IsError)
                 {
                     SetStatus($"Local sign-out done, Keycloak logout failed: {result.Error}", true);
@@ -351,10 +406,13 @@ public partial class Form1 : AntdUI.Window
         }
         catch (Exception ex)
         {
+            // Dù mạng rớt khiến bước gọi Keycloak lỗi, phiên cục bộ trên Desktop vẫn đã được xóa sạch.
             SetStatus($"Local sign-out done, error during SSO logout: {ex.Message}", true);
         }
         finally
         {
+            // Khối finally LUÔN chạy dù try thành công, return sớm hay văng lỗi:
+            // mở khóa lại nút và đổi chữ thành "Sign In" để người dùng có thể đăng nhập lại.
             if (!IsDisposed)
             {
                 btnConnect.Text = "Sign In";
@@ -363,6 +421,7 @@ public partial class Form1 : AntdUI.Window
         }
     }
 
+    // Gom phần dọn sạch màn hình sau khi đăng xuất ra hàm riêng để SignOutAsync gọn và dễ đọc.
     private void ResetUiAfterLogout()
     {
         _agents.Clear();
@@ -490,6 +549,7 @@ public partial class Form1 : AntdUI.Window
         }
 
         using var window = new AgentsForm();
+        // Truyền lại đúng 1 instance _metricsClient dùng chung của Form1 (không new mới để tránh rò rỉ HttpClient).
         window.MetricsClient = _metricsClient;
         window.ReloadAgentsAsync = async cancellationToken =>
         {
@@ -594,34 +654,59 @@ public partial class Form1 : AntdUI.Window
         }
     }
 
-    // Tự động làm mới Access Token khi còn dưới 60 giây là hết hạn.
+    // Hàm trung tâm cung cấp Access Token CÒN HẠN cho cả SignalR lẫn MetricsApiClient.
+    // Luồng hoạt động mỗi khi có nơi cần token:
+    //   Chưa đăng nhập (_accessToken == null)        -> trả null
+    //   Token vẫn còn hạn > 60 giây                  -> trả ngay _accessToken hiện tại (không gọi mạng)
+    //   Token còn dưới 60 giây (hoặc đã hết hạn)     -> vào khóa _tokenLock -> gọi Keycloak xin token mới
+    //                                                -> thành công: lưu token mới & trả về
+    //                                                -> thất bại (hết phiên SSO): xóa phiên & báo đăng nhập lại
     private async Task<string?> GetValidAccessTokenAsync(CancellationToken ct = default)
     {
+        // Chưa đăng nhập (hoặc vừa đăng xuất) thì không có token để gửi.
         if (string.IsNullOrEmpty(_accessToken))
             return null;
 
+        // Trừ trước 60 giây (AddSeconds(-60)) làm khoảng an toàn:
+        // ví dụ token sống 5 phút thì từ phút thứ 4 trở đi sẽ chủ động đi gia hạn sớm,
+        // tránh trường hợp gửi lên tới Server mới vừa hết hạn dẫn đến lỗi 401.
         if (DateTimeOffset.UtcNow < _accessTokenExpiresAt.AddSeconds(-60))
             return _accessToken;
 
+        // Chờ tới lượt đi qua "ổ khóa" để đảm bảo tại 1 thời điểm chỉ có duy nhất 1 request gọi refresh tới Keycloak.
         await _tokenLock.WaitAsync(ct);
         try
         {
+            // Kiểm tra lại lần 2 sau khi vào được trong khóa (kỹ thuật double-check):
+            // vì trong lúc luồng này đứng chờ ở WaitAsync, có thể luồng khác vừa gia hạn xong rồi
+            // (hoặc người dùng vừa bấm Logout xóa _accessToken). Nếu vậy thì trả luôn, không gọi Keycloak nữa.
             if (string.IsNullOrEmpty(_accessToken) || DateTimeOffset.UtcNow < _accessTokenExpiresAt.AddSeconds(-60))
                 return _accessToken;
 
+            // Lưu _refreshToken hiện tại vào biến tạm trước khi await gọi mạng.
             var currentRefreshToken = _refreshToken;
             if (string.IsNullOrEmpty(currentRefreshToken))
                 return null;
 
+            // Gọi ngầm tới Keycloak để đổi Refresh Token lấy Access Token mới (không cần mở trình duyệt).
             var refresh = await _oidcClient.RefreshTokenAsync(currentRefreshToken, cancellationToken: ct);
-            if (_refreshToken != currentRefreshToken)
-                return null; // Đã đăng xuất trong lúc đang làm mới token
 
+            // Chặn tình huống: trong lúc đang chờ Keycloak trả lời ở dòng trên, người dùng bấm nút Logout
+            // (làm _refreshToken bị xóa về null hoặc đổi sang phiên khác). Khi đó phải bỏ qua kết quả này,
+            // tuyệt đối không ghi đè lại _accessToken cũ lên trạng thái đã đăng xuất.
+            if (_refreshToken != currentRefreshToken)
+                return null;
+
+            // Nếu Keycloak từ chối gia hạn (ví dụ quá 30 phút không dùng hoặc Admin đã thu hồi phiên):
+            // xóa sạch phiên cục bộ và báo trên giao diện để người dùng bấm Sign In đăng nhập lại.
             if (refresh.IsError || string.IsNullOrEmpty(refresh.AccessToken))
             {
                 _accessToken = null;
                 _refreshToken = null;
                 _accessTokenExpiresAt = default;
+
+                // Vì hàm này có thể được gọi từ luồng nền (SignalR / HttpClient), phải dùng RunOnUiAsync
+                // để đẩy thao tác cập nhật chữ & nút bấm về đúng luồng giao diện (UI thread).
                 _ = RunOnUiAsync(() =>
                 {
                     SetStatus("Session expired. Please sign in again.", true);
@@ -635,8 +720,12 @@ public partial class Form1 : AntdUI.Window
                 return null;
             }
 
+            // Gia hạn thành công -> cập nhật Access Token mới và mốc hết hạn mới.
             _accessToken = refresh.AccessToken;
             _accessTokenExpiresAt = refresh.AccessTokenExpiration;
+
+            // Keycloak có thể cấp Refresh Token / Identity Token mới khi refresh (hoặc để trống nếu giữ cái cũ),
+            // nên chỉ ghi đè khi server thực sự trả về chuỗi không rỗng.
             if (!string.IsNullOrEmpty(refresh.RefreshToken))
                 _refreshToken = refresh.RefreshToken;
             if (!string.IsNullOrEmpty(refresh.IdentityToken))
@@ -646,14 +735,17 @@ public partial class Form1 : AntdUI.Window
         }
         finally
         {
+            // BẮT BUỘC mở khóa trong finally để dù thành công hay gặp lỗi mạng/hủy (CancellationToken),
+            // các luồng khác cũng không bao giờ bị treo vĩnh viễn ở WaitAsync.
             _tokenLock.Release();
         }
     }
 
-    // Giải phóng tài nguyên khi đóng Form
+    // Giải phóng tài nguyên mạng (_metricsClient và _hubConnection) khi đóng cửa sổ chính.
     protected override async void OnFormClosed(FormClosedEventArgs e)
     {
         base.OnFormClosed(e);
+        // Đóng HttpClient bên trong MetricsApiClient, hủy mọi request metrics còn dang dở.
         _metricsClient.Dispose();
 
         try
