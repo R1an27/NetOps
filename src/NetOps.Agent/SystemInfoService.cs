@@ -1,12 +1,14 @@
 // Namespace chứa các class xử lý mạng cấp cao trong .NET (như DNS, HTTP, địa chỉ IP)
-// Để dùng class Dns
+// Để dùng class Dns và IPAddress
 using NetOps.Shared;
 using System.Net;
+// Chứa NetworkInterface để quét trực tiếp các card mạng đang hoạt động trên cả Windows lẫn Linux
+using System.Net.NetworkInformation;
 // Chứa các công cụ tầng mạng Socket (TCP, UDP và các giao thức mạng khác).
-// Để dùng được bảng phân loại AddressFamily (AddressFamily.InterNetwork - ma
+// Để dùng được bảng phân loại AddressFamily (AddressFamily.InterNetwork - IPv4)
 using System.Net.Sockets;
 // Interop stand by Inter-operability (khả năng tương tác)
-// Để dung class RuntimeInformation
+// Để dùng class RuntimeInformation
 using System.Runtime.InteropServices;
 
 
@@ -30,12 +32,21 @@ public static class SystemInfoService
         return RuntimeInformation.OSDescription;
     }
 
+    // Lấy địa chỉ IPv4 cục bộ của máy bằng cách quét trực tiếp các card mạng đang bật.
+    // Vì sao KHÔNG dùng Dns.GetHostEntry(Dns.GetHostName()).First(...) như cũ?
+    // - Trên nhiều VM Linux (Ubuntu/Debian), /etc/hosts hay ánh xạ hostname về 127.0.1.1 hoặc không resolve được -> dễ crash hoặc lấy sai IP.
+    // - Quét NetworkInterface lấy đúng IP thật của card mạng đang Up (bỏ qua loopback 127.0.0.1), và nếu không có mạng thì trả về 127.0.0.1 chứ không crash.
     public static string GetLocalIpAddress()
     {
-        return Dns.GetHostEntry(Dns.GetHostName())
-                  .AddressList
-                  .First(a => a.AddressFamily == AddressFamily.InterNetwork)
-                  .ToString();
+        var ip = NetworkInterface.GetAllNetworkInterfaces()
+            .Where(nic => nic.OperationalStatus == OperationalStatus.Up
+                       && nic.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+            .SelectMany(nic => nic.GetIPProperties().UnicastAddresses)
+            .Select(info => info.Address)
+            .FirstOrDefault(addr => addr.AddressFamily == AddressFamily.InterNetwork
+                                 && !IPAddress.IsLoopback(addr));
+
+        return ip?.ToString() ?? IPAddress.Loopback.ToString();
     }
 
     // Lấy số nhân CPU
@@ -51,16 +62,21 @@ public static class SystemInfoService
         return GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
     }
 
-    // 6. Lấy hoặc tạo Agent ID
-    // Lần đầu chạy: tạo ID và lưu vào agent-id.txt.
-    // Những lần sau: đọc lại ID đã lưu.
-    // Trên Windows, vị trí lưu là %LOCALAPPDATA%\NetOps\Agent\agent-id.txt.
+    // 6. Lấy hoặc tạo Agent ID ổn định giữa các lần khởi động lại.
+    // Thứ tự chọn thư mục lưu agent-id.txt:
+    //   1. Biến môi trường NETOPS_DATA_DIR (ví dụ /var/lib/netops-agent khi chạy systemd service trên Linux).
+    //   2. Thư mục LocalApplicationData (trên Windows là %LOCALAPPDATA%\NetOps\Agent).
+    //   3. Dự phòng AppContext.BaseDirectory nếu chạy dưới service Linux không có biến $HOME (tránh đường dẫn rỗng).
     public static string GetAgentId()
     {
-        var folder = Path.Combine(
-            Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData),
-            "NetOps", "Agent");
+        var customDir = Environment.GetEnvironmentVariable("NETOPS_DATA_DIR");
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        var folder = !string.IsNullOrWhiteSpace(customDir)
+            ? customDir.Trim()
+            : !string.IsNullOrWhiteSpace(localAppData)
+                ? Path.Combine(localAppData, "NetOps", "Agent")
+                : Path.Combine(AppContext.BaseDirectory, "data");
 
         Directory.CreateDirectory(folder);
 

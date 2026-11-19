@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
@@ -31,11 +32,19 @@ var info = SystemInfoService.GetRegistrationInfo();
 Console.WriteLine($"Agent {info.Hostname} (ID: {info.AgentId}). Nhan Ctrl+C de dung.");
 
 using var shutdown = new CancellationTokenSource();
+// Bắt tín hiệu Ctrl+C (SIGINT) khi chạy trực tiếp trên terminal.
 Console.CancelKeyPress += (_, e) =>
 {
     e.Cancel = true;
     shutdown.Cancel();
 };
+// Bắt thêm tín hiệu SIGTERM khi chạy dưới dạng systemd service trên Linux (`systemctl stop netops-agent`):
+// giúp Agent đóng kết nối SignalR sạch sẽ ngay lập tức thay vì bị systemd đợi 90 giây rồi ép kill.
+using var sigTerm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx =>
+{
+    ctx.Cancel = true;
+    shutdown.Cancel();
+});
 
 await using var connection = new HubConnectionBuilder()
     .WithUrl(hubUri, HttpTransportType.WebSockets)
