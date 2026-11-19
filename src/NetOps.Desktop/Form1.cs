@@ -47,7 +47,6 @@ public partial class Form1 : AntdUI.Window
         connectionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 85F));
         connectionLayout.Controls.Add(btnLogout, 2, 0);
         connectionLayout.SetRowSpan(btnLogout, 2);
-
         // Tạo một đối tượng chứa cấu hình đăng nhập, rồi giữ nó trong biến options.
         var options = new OidcClientOptions
         {
