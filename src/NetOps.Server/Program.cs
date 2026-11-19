@@ -41,6 +41,15 @@ builder.Services.AddKeycloakAuthorization();
 
 builder.Services.AddAuthorization(options =>
 {
+    // Keycloak thêm client_id vào token của tài khoản dịch vụ. Mỗi Agent có một tài khoản riêng.
+    // Quyền NetOpsAgent thuộc client netops-backend và được quản trị viên gán cho từng máy.
+    options.AddPolicy("ConnectAgent", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim("client_id");
+        policy.RequireResourceRolesForClient("netops-backend", ["NetOpsAgent"]);
+    });
+
     // Tạo một chính sách mang tên RunCommands, với các điều kiện được khai báo bên trong.
     // options là đối tượng cấu hình AuthorizationOptions của Microsoft.
     //
@@ -140,7 +149,10 @@ if (app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHub<AgentHubService>("/hubs/agents");
+// Kiểm tra quyền ngay khi mở kết nối. Khi token hết hạn, Server đóng WebSocket
+// để Agent phải xin token mới. Máy đã bị vô hiệu hóa trong Keycloak sẽ dừng ở bước xin token.
+app.MapHub<AgentHubService>("/hubs/agents", options => options.CloseOnAuthenticationExpiration = true)
+    .RequireAuthorization("ConnectAgent");
 
 // -- API của Prometheus --
 // Bộ lọc kiểm tra định dạng agentId để chống tấn công PromQL Injection.
