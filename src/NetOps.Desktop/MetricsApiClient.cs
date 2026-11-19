@@ -1,4 +1,4 @@
-﻿using NetOps.Shared;
+using NetOps.Shared;
 // Để sử dụng AuthenticationHeaderValue giúp đính kèm Bearer Token vào header HTTP
 using System.Net.Http.Headers;
 // Thư viện xử lý đọc ghi JSON qua HTTP
@@ -16,8 +16,7 @@ public class MetricsApiClient
     {
         _tokenProvider = tokenProvider;
 
-        // Khởi tạo HttpClient có sử dụng handler bỏ qua SSL
-        _httpClient = new HttpClient(handler)
+        _httpClient = new HttpClient
         {
             BaseAddress = new Uri(baseAddress),
             Timeout = TimeSpan.FromSeconds(5) // Quá 5 giây không phản hồi thì ngắt
