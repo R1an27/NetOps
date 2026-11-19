@@ -104,6 +104,8 @@ Description=NetOps Manager - Background Agent Service
 # Đợi hệ thống có mạng sẵn sàng rồi mới khởi động Agent
 After=network-online.target
 Wants=network-online.target
+# Máy mới chỉ bắt đầu kết nối sau khi quản trị viên cấp secret riêng cho Agent.
+ConditionFileNotEmpty=$DATA_DIR/client-secret.txt
 
 [Service]
 # Dùng Type=simple (KHÔNG dùng Type=notify) vì NetOps.Agent là ứng dụng console bình thường,
@@ -116,6 +118,8 @@ WorkingDirectory=$INSTALL_DIR
 # Truyền đường dẫn lưu agent-id.txt và địa chỉ Server vào biến môi trường cho Agent đọc
 Environment="NETOPS_DATA_DIR=$DATA_DIR"
 Environment="NETOPS_HUB_URL=$HUB_URL"
+# Khi dùng Keycloak riêng, đặt NETOPS_TOKEN_URL trong file này. Dấu trừ cho phép bỏ qua file trên máy dùng cấu hình mặc định.
+EnvironmentFile=-/etc/netops-agent.conf
 # Nếu Agent gặp lỗi bị thoát, tự động khởi động lại sau 5 giây
 Restart=always
 RestartSec=5
@@ -128,6 +132,14 @@ EOF
 # [6] Nạp cấu hình, bật tự chạy khi mở máy và khởi động service ngay
 systemctl daemon-reload
 systemctl enable netops-agent.service
+if [ ! -s "$DATA_DIR/client-secret.txt" ]; then
+  # Khi nâng cấp, dừng cả tiến trình cũ. In ID bằng đúng tài khoản và thư mục mà service sẽ dùng.
+  systemctl stop netops-agent.service
+  agent_id=$(runuser -u "$SERVICE_USER" -- env NETOPS_DATA_DIR="$DATA_DIR" "$INSTALL_DIR/NetOps.Agent" --show-id)
+  echo "Da cai Agent. Hay cap Client ID $agent_id trong Keycloak va luu secret vao $DATA_DIR/client-secret.txt."
+  echo "Dat owner $SERVICE_USER, quyen 600, roi chay: sudo systemctl start netops-agent.service"
+  exit 0
+fi
 systemctl restart netops-agent.service
 
 echo ""
