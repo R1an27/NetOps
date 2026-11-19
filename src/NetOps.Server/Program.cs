@@ -1,5 +1,7 @@
 // Dùng thư viện này thêm regex để kiểm tra hợp lệ ngay trước endpoint (chống PromQL Injection)
 using System.Text.RegularExpressions;
+// Dùng để đọc header X-Forwarded-For / X-Forwarded-Proto khi Server chạy sau Cloudflare Tunnel / reverse proxy
+using Microsoft.AspNetCore.HttpOverrides;
 // [5.2] Khai báo chính sách RunCommands
 // Namespace này chứa các hàm của thư viện vừa cài ở [5.1], gồm AddKeycloakAuthorization() và RequireRealmRoles().
 using Keycloak.AuthServices.Authorization;
@@ -91,10 +93,23 @@ builder.Services.AddHttpClient("Prometheus", client =>
 // Đẩy metrics Agent nhận từ SignalR sang Prometheus qua OTLP nội bộ
 builder.Services.AddHostedService<AgentMetricsExporter>();
 
+// Cấu hình đọc header chuyển tiếp từ Cloudflare Tunnel / reverse proxy (giúp Server biết đúng IP thật và giao thức HTTPS).
+// Vì trong compose.yaml container netops-server chỉ mở cổng nội bộ 127.0.0.1:8080 (không mở trực tiếp ra Internet),
+// ta xóa danh sách proxy mặc định để chấp nhận request đi qua cầu nối mạng Docker (bridge IP như 172.18.x.x).
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 // Đăng ký SignalR trong Server
 builder.Services.AddSignalR();
 
 var app = builder.Build();
+
+// Phải gọi UseForwardedHeaders() sớm trước Authentication/Authorization để các bước sau nhận đúng Scheme (https) và IP thật.
+app.UseForwardedHeaders();
 
 app.MapDefaultEndpoints();
 

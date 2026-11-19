@@ -4,11 +4,12 @@ var builder = DistributedApplication.CreateBuilder(args);
 var rabbitmq = builder.AddRabbitMQ("rabbitmq")
                       .WithManagementPlugin();
 // Thêm keycloak container (vì nuget package chưa có, nên phải kéo image chính thức của RED HAT về)
+// Keycloak 26 dùng biến KC_BOOTSTRAP_ADMIN_* thay cho KEYCLOAK_ADMIN cũ (đồng bộ với compose.yaml)
 var keycloak = builder.AddContainer("keycloak", "quay.io/keycloak/keycloak", "26.1")
                       .WithVolume(name: "netops-keycloak-data", target: "/opt/keycloak/data")
                       .WithHttpEndpoint(port: 8080, targetPort: 8080, name: "http")
-                      .WithEnvironment("KEYCLOAK_ADMIN", "admin")
-                      .WithEnvironment("KEYCLOAK_ADMIN_PASSWORD", "admin")
+                      .WithEnvironment("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
+                      .WithEnvironment("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
                       .WithArgs("start-dev");
 
 // Thêm Prometheus container để thu thập và lưu trữ time-series metrics
