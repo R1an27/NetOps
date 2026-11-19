@@ -4,6 +4,7 @@
 **/bin
 **/obj
 *.env
+**/client-secret.txt
 TestResults
 docs
 tasks
