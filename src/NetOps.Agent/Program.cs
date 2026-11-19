@@ -50,11 +50,15 @@ await using var connection = new HubConnectionBuilder()
     .WithUrl(hubUri, HttpTransportType.WebSockets)
     .Build();
 
+// Ổ khóa chỉ cho phép chạy tuần tự từng lệnh một trên Agent này,
+// tránh nhiều lệnh chạy chồng nhau làm quá tải máy hoặc trộn lẫn output hiển thị trên Desktop.
+var commandLock = new SemaphoreSlim(1, 1);
+
 // Đăng ký handler nhận lệnh một lần trước vòng lặp reconnect để tránh trùng lặp handler.
 connection.On<CommandRequest>("ReceiveCommand", cmdReq =>
 {
     Console.WriteLine($"Nhan lenh {cmdReq.CommandId}: {cmdReq.CommandText}");
-    _ = ExecuteAssignedCommandAsync(commandExecutor, connection, cmdReq, info.AgentId, shutdown.Token);
+    _ = ExecuteAssignedCommandAsync(commandExecutor, commandLock, connection, cmdReq, info.AgentId, shutdown.Token);
 });
 
 try
@@ -119,24 +123,37 @@ catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
 
 static async Task ExecuteAssignedCommandAsync(
     CommandExecutor executor,
+    SemaphoreSlim commandLock,
     HubConnection connection,
     CommandRequest command,
     string agentId,
     CancellationToken shutdownToken)
 {
+    var lockAcquired = false;
     try
     {
+        // Xếp hàng chờ nếu Agent đang bận chạy lệnh trước đó; tự hủy chờ nếu Agent tắt.
+        await commandLock.WaitAsync(shutdownToken);
+        lockAcquired = true;
+
         await executor.ExecuteCommandAsync(
             command,
             output => connection.InvokeAsync("SendCommandOutput", output, shutdownToken),
-            agentId);
+            agentId,
+            shutdownToken);
     }
     catch (OperationCanceledException) when (shutdownToken.IsCancellationRequested)
     {
-        // Đang tắt Agent nên dừng gửi output.
+        // Đang tắt Agent nên dừng chờ/gửi output.
     }
     catch (Exception ex)
     {
         Console.Error.WriteLine($"Loi khi gui ket qua lenh {command.CommandId}: {ex.Message}");
+    }
+    finally
+    {
+        // Chỉ mở khóa khi thực sự đã chiếm được khóa (tránh lỗi nếu bị hủy ngay lúc đang chờ ở WaitAsync).
+        if (lockAcquired)
+            commandLock.Release();
     }
 }

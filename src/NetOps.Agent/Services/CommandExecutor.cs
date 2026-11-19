@@ -19,11 +19,14 @@ namespace NetOps.Agent.Services
         public async Task ExecuteCommandAsync(
             CommandRequest request,
             Func<CommandOutput, Task> sendOutputAsync,
-            string agentId)
+            string agentId,
+            CancellationToken shutdownToken = default)
         {
-            // 1. Cài đặt CancellationToken để xử lý Timeout
+            // 1. Gắn chung cả 2 điều kiện hủy vào 1 token: hết thời gian (Timeout) HOẶC Agent đang tắt (Ctrl+C / systemctl stop).
+            // Nhờ đó khi dừng Agent giữa chừng, tiến trình con cũng bị dọn sạch ngay thay vì chạy ngầm mồ côi.
             var timeoutSeconds = request.TimeoutSeconds > 0 ? request.TimeoutSeconds : 60;
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+            cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
             var token = cts.Token;
 
             // 2. Chọn Shell dựa trên nền tảng và yêu cầu
@@ -82,7 +85,11 @@ namespace NetOps.Agent.Services
                     process.Kill(entireProcessTree: true);
                 }
 
-                await SendCommandStatusAsync(sendOutputAsync, agentId, request.CommandId, -1, "Timeout/Hủy lệnh (Đã dọn dẹp Process Tree)");
+                // Nếu bị hủy vì Agent đang tắt thì dừng luôn, không cố gửi mạng lên kết nối đang đóng.
+                if (!shutdownToken.IsCancellationRequested)
+                {
+                    await SendCommandStatusAsync(sendOutputAsync, agentId, request.CommandId, -1, "Timeout/Hủy lệnh (Đã dọn dẹp Process Tree)");
+                }
             }
             catch (Exception ex)
             {
