@@ -37,9 +37,11 @@ public class AgentHubService : Hub
             throw new HubException("Thong tin dang ky Agent khong hop le.");
         }
 
-        if (Context.Items["AgentId"] is string agentId && agentId != info.AgentId)
+        // AgentId trong yêu cầu do máy tự gửi. client_id trong token đã được Keycloak ký.
+        // So sánh trước khi ghi vào danh bạ để mỗi máy chỉ có thể cập nhật kết nối của chính mình.
+        if (info.AgentId != Context.User?.FindFirst("client_id")?.Value)
         {
-            throw new HubException("Mot ket noi chi duoc dang ky mot AgentId.");
+            throw new HubException("AgentId phải trùng với Client ID đã cấp cho máy này.");
         }
 
         _connectionManager.Register(Context.ConnectionId, info);
