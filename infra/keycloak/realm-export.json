@@ -327,7 +327,14 @@
           "attributes": {}
         }
       ],
-      "netops-backend": [],
+      "netops-backend": [
+        {
+          "name": "NetOpsAgent",
+          "description": "Connect a device to the NetOps Agent hub",
+          "composite": false,
+          "clientRole": true
+        }
+      ],
       "security-admin-console": [],
       "admin-cli": [],
       "account-console": [],
