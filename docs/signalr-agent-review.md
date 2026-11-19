@@ -1,5 +1,7 @@
 # Tích hợp kênh Agent–Server qua SignalR trên nhánh `main`
 
+Để cài Agent cho phiên bản hiện tại, xem [hướng dẫn cấp danh tính thiết bị bằng Keycloak](agent-authentication.md).
+
 Quyết định ngày 15/11/2026: dùng SignalR/WebSockets qua Cloudflare Tunnel (`/hubs/agents`) thay cho gRPC duplex stream `AgentHub.ConnectStream` để Agent không cần OpenVPN khi kết nối từ ngoài mạng trường.
 
 Nhánh PoC `feat/signalr-agent-poc` đã kiểm chứng kết nối thực tế từ Agent Windows (`DESKTOP-T5Q6AC0`, tắt OpenVPN) tới container `netops-server` qua `https://api.r1antech.online/hubs/agents`. Bản tích hợp này đưa thay đổi SignalR và cấu hình N00 lên nền `main` mới nhất, giữ nguyên các tính năng hiện có của nhóm.
