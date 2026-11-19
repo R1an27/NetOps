@@ -1,98 +1,51 @@
-using NetOps.Shared;
-// Để sử dụng AuthenticationHeaderValue giúp đính kèm Bearer Token vào header HTTP
 using System.Net.Http.Headers;
-// Thư viện xử lý đọc ghi JSON qua HTTP
 using System.Net.Http.Json;
+using NetOps.Shared;
 
 namespace NetOps.Desktop;
 
-public class MetricsApiClient
+public sealed class MetricsApiClient : IDisposable
 {
     private readonly HttpClient _httpClient;
-    // Hàm delegate để lấy token mới nhất từ Form chính
-    private readonly Func<string?> _tokenProvider;
+    private readonly Func<CancellationToken, Task<string?>> _getTokenAsync;
 
-    public MetricsApiClient(string baseAddress, Func<string?> tokenProvider)
+    public MetricsApiClient(string baseAddress, Func<CancellationToken, Task<string?>> getTokenAsync)
     {
-        _tokenProvider = tokenProvider;
-
+        _getTokenAsync = getTokenAsync;
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri(baseAddress),
-            Timeout = TimeSpan.FromSeconds(5) // Quá 5 giây không phản hồi thì ngắt
+            Timeout = TimeSpan.FromSeconds(5)
         };
     }
 
-    // Hàm gọi API lấy metrics của một Agent, tự động gắn Bearer Token
-    public async Task<HostMetricsSummaryDto?> GetHostMetricsAsync(string agentId, CancellationToken ct = default)
+    public Task<HostMetricsSummaryDto?> GetHostMetricsAsync(string agentId, CancellationToken ct = default) =>
+        GetAsync<HostMetricsSummaryDto>($"/api/hosts/{Uri.EscapeDataString(agentId)}/metrics/summary", ct);
+
+    public Task<HostMetricsHistoryDto?> GetHostMetricsHistoryAsync(string agentId, string range, CancellationToken ct = default) =>
+        GetAsync<HostMetricsHistoryDto>($"/api/hosts/{Uri.EscapeDataString(agentId)}/metrics/history?range={Uri.EscapeDataString(range)}", ct);
+
+    private async Task<T?> GetAsync<T>(string url, CancellationToken ct)
     {
         try
         {
-            var token = _tokenProvider();
-            using var request = new HttpRequestMessage(
-                HttpMethod.Get,
-                $"/api/hosts/{Uri.EscapeDataString(agentId)}/metrics/summary");
-
-            // Gắn token xác thực nếu đã đăng nhập
-            if (!string.IsNullOrEmpty(token))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            }
-
-            using var response = await _httpClient.SendAsync(request, ct);
-            if (response.IsSuccessStatusCode)
-            {
-                return await response.Content.ReadFromJsonAsync<HostMetricsSummaryDto>(cancellationToken: ct);
-            }
-
-            return null;
-        }
-        catch (OperationCanceledException)
-        {
-            return null; // Khi người dùng đổi máy hoặc tắt form thì hủy tác vụ
-        }
-        catch (Exception)
-        {
-            return null; // Server không online hoặc lỗi mạng
-        }
-    }
-
-    // Hàm gọi API lấy chuỗi dữ liệu lịch sử theo dải thời gian (5m, 15m, 1h, 3h, 6h)
-    public async Task<HostMetricsHistoryDto?> GetHostMetricsHistoryAsync(
-        string agentId,
-        string range,
-        CancellationToken ct = default)
-    {
-        try
-        {
-            var token = _tokenProvider();
-            string url = $"/api/hosts/{Uri.EscapeDataString(agentId)}/metrics/history?range={Uri.EscapeDataString(range)}";
-
+            var token = await _getTokenAsync(ct);
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
-
-            // Gắn Bearer Token để vượt qua chính sách ReadMetrics của Server
             if (!string.IsNullOrEmpty(token))
-            {
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            }
 
             using var response = await _httpClient.SendAsync(request, ct);
-            if (response.IsSuccessStatusCode)
-            {
-                return await response.Content.ReadFromJsonAsync<HostMetricsHistoryDto>(cancellationToken: ct);
-            }
-
-            return null;
-        }
-        catch (OperationCanceledException)
-        {
-            return null; // Khi người dùng bấm đổi dải nhanh thì hủy an toàn
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync<T>(cancellationToken: ct)
+                : default;
         }
         catch (Exception)
         {
-            return null; // Lỗi mạng hoặc server không phản hồi
+            return default;
         }
     }
+
+    public void Dispose() => _httpClient.Dispose();
 }
 
 // BỘ CHUYỂN ĐỔI ĐƠN VỊ 

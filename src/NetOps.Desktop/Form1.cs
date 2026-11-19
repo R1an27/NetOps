@@ -11,15 +11,14 @@ public partial class Form1 : AntdUI.Window
     private List<AgentSummary> _agents = new();
 
     private readonly HubConnection _hubConnection;
-
     private readonly OidcClient _oidcClient;
+    private readonly MetricsApiClient _metricsClient;
+    private readonly SemaphoreSlim _tokenLock = new(1, 1);
 
-    // [2.1] Thêm một field để giữ token
-    // ?: cho phép giá trị là null, vì lúc ứng dụng vừa mở thì chưa đăng nhập.
-    // Giá trị sẽ thay đổi sau khi đăng nhập, nên field này không đặt readonly.
-    // Vì sao phải giữ trong field? Vì chúng ta nhận token trong OnShown(), nhưng phần cấu hình SignalR cũng cần đọc được nó.
     private string? _accessToken;
-    private string? _identityToken; // <-- Thêm field này để lưu id_token_hint cho việc Logout
+    private string? _refreshToken;
+    private string? _identityToken; // Lưu id_token_hint cho việc Logout
+    private DateTimeOffset _accessTokenExpiresAt;
     private bool _connecting;
     private int _outputLineCount;
     private AntdUI.Button btnLogout;
@@ -64,50 +63,13 @@ public partial class Form1 : AntdUI.Window
             Browser = new SystemBrowser()
         };
 
-        // Tạo công cụ đăng nhập sử dụng phiếu cấu hình đó,
-        // rồi giữ công cụ trong field _oidcClient để các hàm của Form1 dùng được.
         _oidcClient = new OidcClient(options);
-
-        // Đoạn này mới tạo đối tượng chứa cấu hình kết nối. Muốn kết nối thật, cần gọi StartAsync().
-        // [2.3] Cấu hình SignalR lấy token từ field vừa tạo
-        // Đây là cách cấu hình AccessTokenProvider theo ví dụ SignalR .NET client của Microsoft.
-        // https://learn.microsoft.com/en-us/aspnet/core/signalr/authn-and-authz?view=aspnetcore-10.0#bearer-token-authentication
+        _metricsClient = new MetricsApiClient(ServerBaseUrl, GetValidAccessTokenAsync);
 
         _hubConnection = new HubConnectionBuilder()
             .WithUrl($"{ServerBaseUrl}/hubs/netops", connectionOptions =>
             {
-                // connectionOptions là gì?
-                // connectionOptions là đối tượng cấu hình kết nối HTTP của SignalR.
-                // Nó có kiểu HttpConnectionOptions, thuộc thư viện Microsoft.
-                // Sử dụng thuộc tính AccessTokenProvider để chỉ cho SignalR cách lấy token khi cần gửi yêu cầu (gửi lệnh).
-                // https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.http.connections.client.httpconnectionoptions.accesstokenprovider?view=aspnetcore-10.0
-                // Vì sao lại có () =>?
-                // là cách viết một hàm không có tham số, thường gọi là biểu thức lambda.
-                // Ở đây, chúng ta đưa hàm ấy cho SignalR, với ý nghĩa: Khi cần token, hãy gọi hàm này để lấy giá trị _accessToken hiện tại.
-                // Nó giải thích được một điều: constructor chạy trước khi đăng nhập, vậy lúc đó _accessToken còn null thì sao?
-                // Trình tự thực tế là:
-                //Constructor chạy:
-                //    _accessToken đang null.
-                //    Đăng ký hàm cung cấp token cho SignalR.
-                //                 ↓
-                //OnShown chạy:
-                //    Đăng nhập thành công.
-                //    Gán token vào _accessToken.
-                //                 ↓
-                //ConnectToServerAsync chạy:
-                //    Gọi _hubConnection.StartAsync().
-                //    SignalR gọi hàm đã đăng ký để lấy token.
-                //    Lúc này _accessToken đã có giá trị.
-                connectionOptions.AccessTokenProvider = () =>
-                {
-                    // Task.FromResult(_accessToken) làm gì?
-                    // AccessTokenProvider yêu cầu hàm cung cấp token trả về một Task<string?>.
-                    // Trong khi đó, _accessToken chỉ là một chuỗi đã có sẵn. Vì vậy:
-                    // Task.FromResult(_accessToken)
-                    // tạo một Task đã hoàn thành, chứa chuỗi token ấy làm kết quả.
-                    // https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.task.fromresult?view=net-10.0
-                    return Task.FromResult(_accessToken);
-                };
+                connectionOptions.AccessTokenProvider = () => GetValidAccessTokenAsync();
             })
             .Build();
         // Khi kết nối SignalR nhận sự kiện tên CommandOutputReceived,
@@ -288,10 +250,11 @@ public partial class Form1 : AntdUI.Window
 
 
 
-            // [2.2] Lấy token từ kết quả đăng nhập
-            // Lấy chuỗi access token từ kết quả đăng nhập và giữ nó trong field _accessToken của Form.
+            // Lưu bộ token sau khi đăng nhập thành công
             _accessToken = result.AccessToken;
-            _identityToken = result.IdentityToken; // Lưu id token cho Logout
+            _refreshToken = result.RefreshToken;
+            _identityToken = result.IdentityToken;
+            _accessTokenExpiresAt = result.AccessTokenExpiration;
 
             // [1.5] Đọc tên tài khoản từ đâu?
             // Sau khi thành công, result.User chứa thông tin danh tính dưới dạng các claim.
@@ -352,7 +315,9 @@ public partial class Form1 : AntdUI.Window
         // 1. Giữ tạm id_token rồi xóa phiên cục bộ ngay
         var idToken = _identityToken;
         _accessToken = null;
+        _refreshToken = null;
         _identityToken = null;
+        _accessTokenExpiresAt = default;
 
         // 2. Khóa các nút và dọn giao diện trước khi gọi mạng
         btnLogout.Enabled = false;
@@ -525,8 +490,7 @@ public partial class Form1 : AntdUI.Window
         }
 
         using var window = new AgentsForm();
-        // Truyền MetricsClient có sẵn Bearer Token từ Form chính sang cửa sổ danh bạ
-        window.MetricsClient = new MetricsApiClient(ServerBaseUrl, () => _accessToken);
+        window.MetricsClient = _metricsClient;
         window.ReloadAgentsAsync = async cancellationToken =>
         {
             var agents = await _hubConnection.InvokeAsync<List<AgentSummary>>(
@@ -630,10 +594,67 @@ public partial class Form1 : AntdUI.Window
         }
     }
 
-    // Phần giải phóng _hubConnection
+    // Tự động làm mới Access Token khi còn dưới 60 giây là hết hạn.
+    private async Task<string?> GetValidAccessTokenAsync(CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(_accessToken))
+            return null;
+
+        if (DateTimeOffset.UtcNow < _accessTokenExpiresAt.AddSeconds(-60))
+            return _accessToken;
+
+        await _tokenLock.WaitAsync(ct);
+        try
+        {
+            if (string.IsNullOrEmpty(_accessToken) || DateTimeOffset.UtcNow < _accessTokenExpiresAt.AddSeconds(-60))
+                return _accessToken;
+
+            var currentRefreshToken = _refreshToken;
+            if (string.IsNullOrEmpty(currentRefreshToken))
+                return null;
+
+            var refresh = await _oidcClient.RefreshTokenAsync(currentRefreshToken, cancellationToken: ct);
+            if (_refreshToken != currentRefreshToken)
+                return null; // Đã đăng xuất trong lúc đang làm mới token
+
+            if (refresh.IsError || string.IsNullOrEmpty(refresh.AccessToken))
+            {
+                _accessToken = null;
+                _refreshToken = null;
+                _accessTokenExpiresAt = default;
+                _ = RunOnUiAsync(() =>
+                {
+                    SetStatus("Session expired. Please sign in again.", true);
+                    if (_hubConnection.State == HubConnectionState.Disconnected)
+                    {
+                        btnConnect.Text = "Sign In";
+                        btnConnect.Enabled = true;
+                        btnLogout.Enabled = false;
+                    }
+                });
+                return null;
+            }
+
+            _accessToken = refresh.AccessToken;
+            _accessTokenExpiresAt = refresh.AccessTokenExpiration;
+            if (!string.IsNullOrEmpty(refresh.RefreshToken))
+                _refreshToken = refresh.RefreshToken;
+            if (!string.IsNullOrEmpty(refresh.IdentityToken))
+                _identityToken = refresh.IdentityToken;
+
+            return _accessToken;
+        }
+        finally
+        {
+            _tokenLock.Release();
+        }
+    }
+
+    // Giải phóng tài nguyên khi đóng Form
     protected override async void OnFormClosed(FormClosedEventArgs e)
     {
         base.OnFormClosed(e);
+        _metricsClient.Dispose();
 
         try
         {
