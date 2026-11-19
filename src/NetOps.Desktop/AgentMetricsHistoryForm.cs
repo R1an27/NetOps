@@ -337,9 +337,10 @@ public partial class AgentMetricsHistoryForm : AntdUI.Window
 
     private async Task FetchHistoryDataAsync()
     {
-        //  Giải phóng '_queryCts' khi đóng Form
+        // Hủy và giải phóng (Dispose) token truy vấn cũ trước khi tạo mới, tránh rò rỉ tài nguyên khi bấm đổi dải nhanh
         if (IsDisposed || Disposing) return;
         _queryCts?.Cancel();
+        _queryCts?.Dispose();
         _queryCts = new CancellationTokenSource();
         var ct = _queryCts.Token;
 
