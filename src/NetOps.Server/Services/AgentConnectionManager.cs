@@ -15,6 +15,12 @@ public sealed record AgentConnection
     public HeartbeatMessage? LatestHeartbeat { get; init; }
 }
 
+// Thông tin định tuyến cho 1 lệnh đang chạy, lưu trong RAM (IMemoryCache) theo key "command:<CommandId>".
+// Lưu cả 2 giá trị (DesktopConnectionId + AgentId) để khi Agent trả output về:
+//   1. Biết chính xác phải gửi kết quả về phiên Desktop nào (DesktopConnectionId).
+//   2. Kiểm tra đúng Agent được giao lệnh mới được gửi output, chặn Agent khác giả mạo kết quả (AgentId).
+public sealed record CommandRoute(string DesktopConnectionId, string AgentId);
+
 /// <summary>
 /// Quản lý danh sách kết nối active và danh bạ các Agent đã biết trong bộ nhớ.
 /// </summary>

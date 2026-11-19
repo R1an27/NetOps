@@ -78,7 +78,9 @@ public class CommandConsumer(
     {
         // Key này phải khớp hoàn toàn với key lúc NetOpsHub.SubmitCommand lưu vào RAM.
         var cacheKey = $"command:{msg.CommandId}";
-        if (!commandRoutes.TryGetValue<string>(cacheKey, out var desktopId) || string.IsNullOrWhiteSpace(desktopId))
+        if (!commandRoutes.TryGetValue<CommandRoute>(cacheKey, out var route)
+            || route is null
+            || string.IsNullOrWhiteSpace(route.DesktopConnectionId))
             return;
 
         // Xóa ngay địa chỉ định tuyến khỏi RAM trước khi gửi thông báo để tránh rò rỉ bộ nhớ,
@@ -90,7 +92,7 @@ public class CommandConsumer(
             // Gửi đúng sự kiện "CommandOutputReceived" mà Form1 trên Desktop đang lắng nghe.
             // Đặt IsCompleted = true và ExitCode = -1 để giao diện Desktop lập tức chuyển badge sang lỗi (đỏ)
             // và kết thúc trạng thái "Waiting for output".
-            await desktopHub.Clients.Client(desktopId).SendAsync("CommandOutputReceived", new CommandOutput
+            await desktopHub.Clients.Client(route.DesktopConnectionId).SendAsync("CommandOutputReceived", new CommandOutput
             {
                 AgentId = msg.AgentId,
                 CommandId = msg.CommandId,

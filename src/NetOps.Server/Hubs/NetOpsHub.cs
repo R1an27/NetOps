@@ -41,6 +41,9 @@ public class NetOpsHub : Hub
         return base.OnConnectedAsync();
     }
 
+    // Bắt buộc người gọi phải có ít nhất 1 trong 3 role NetOps (Admin / Operator / Viewer) mới xem được danh sách Agent.
+    // Nếu bỏ dòng này, tài khoản mới đăng ký chưa được cấp role vẫn có thể gọi GetAgents() vì Hub chỉ yêu cầu đã đăng nhập.
+    [Authorize(Policy = "ReadMetrics")]
     public List<AgentSummary> GetAgents()
     {
         return _connections.GetAgents();
@@ -65,18 +68,18 @@ public class NetOpsHub : Hub
         if (!_connections.TryGetConnection(agentId, out var connection) || connection is null)
             throw new HubException("Không tìm thấy kết nối của Agent.");
 
-        // Lưu địa chỉ trả kết quả vào RAM (IMemoryCache): "command:<CommandId>" -> ConnectionId của máy Desktop này.
+        // Lưu tuyến trả kết quả vào RAM (IMemoryCache): "command:<CommandId>" -> (DesktopConnectionId, AgentId).
         // Phân biệt rõ:
         // - RabbitMQ (bên dưới) giữ NỘI DUNG LỆNH để xếp hàng gửi xuống Agent.
-        // - IMemoryCache (dòng này) giữ ĐỊA CHỈ NGƯỜI GỬI để lát nữa Agent trả output về (chỉ có CommandId),
-        //   AgentHubService tra bảng này biết phải chuyển output về đúng cửa sổ Desktop nào.
+        // - IMemoryCache (dòng này) giữ cả ĐỊA CHỈ DESKTOP nhận output lẫn AGENT ĐƯỢC GIAO LỆNH,
+        //   giúp AgentHubService vừa trả output về đúng cửa sổ Desktop vừa chặn Agent khác gửi output mạo danh.
         // Phải lưu TRƯỚC khi đẩy vào RabbitMQ phòng trường hợp Agent chạy quá nhanh trả kết quả về ngay lập tức.
         // Đặt thời hạn tự xóa (TTL) = TimeoutSeconds + 60 giây dự phòng:
         //   - Đủ dài để không bao giờ bị xóa nhầm khi lệnh hợp lệ còn đang chạy.
         //   - Đảm bảo tự dọn sạch RAM nếu Agent sập nguồn/mất mạng giữa chừng mà không kịp gửi gói IsCompleted = true.
         var commandId = Guid.NewGuid().ToString("N");
         var cacheKey = $"command:{commandId}";
-        _cache.Set(cacheKey, Context.ConnectionId, TimeSpan.FromSeconds(request.TimeoutSeconds + 60));
+        _cache.Set(cacheKey, new CommandRoute(Context.ConnectionId, agentId), TimeSpan.FromSeconds(request.TimeoutSeconds + 60));
 
         var message = new RunCommandMessage
         {

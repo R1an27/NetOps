@@ -90,16 +90,23 @@ public class AgentHubService : Hub
         output.AgentId = agentId;
 
         var cacheKey = $"command:{output.CommandId}";
-        if (!_commandRoutes.TryGetValue<string>(cacheKey, out var desktopConnectionId)
-            || string.IsNullOrWhiteSpace(desktopConnectionId))
+        if (!_commandRoutes.TryGetValue<CommandRoute>(cacheKey, out var route)
+            || route is null
+            || string.IsNullOrWhiteSpace(route.DesktopConnectionId))
         {
             return;
+        }
+
+        // Ràng buộc CommandId <-> AgentId: chỉ đúng Agent đã được giao lệnh này mới được gửi output về Desktop.
+        if (route.AgentId != agentId)
+        {
+            throw new HubException("Agent khong duoc phep gui ket qua cho lenh cua Agent khac.");
         }
 
         try
         {
             await _desktopHubContext.Clients
-                .Client(desktopConnectionId)
+                .Client(route.DesktopConnectionId)
                 .SendAsync("CommandOutputReceived", output);
         }
         catch (Exception ex)
