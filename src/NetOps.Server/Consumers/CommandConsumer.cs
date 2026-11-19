@@ -1,64 +1,80 @@
 using MassTransit;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Memory;
+using NetOps.Server.Hubs;
 using NetOps.Server.Services;
 using NetOps.Shared;
 using NetOps.Shared.Messages;
 
-namespace NetOps.Server.Consumers
-{
-    /// <summary>
-    /// Consumer túc trực ở RabbitMQ, nhận lệnh và điều phối xuống Agent qua SignalR Hub.
-    /// </summary>
-    public class CommandConsumer : IConsumer<RunCommandMessage>
-    {
-        private readonly AgentConnectionManager _connectionManager;
-        private readonly IHubContext<AgentHubService> _agentHubContext;
-        private readonly ILogger<CommandConsumer> _logger;
+namespace NetOps.Server.Consumers;
 
-        public CommandConsumer(
-            AgentConnectionManager connectionManager,
-            IHubContext<AgentHubService> agentHubContext,
-            ILogger<CommandConsumer> logger)
+/// <summary>
+/// Nhận lệnh từ RabbitMQ và đẩy xuống Agent qua SignalR Hub.
+/// </summary>
+public class CommandConsumer(
+    AgentConnectionManager connections,
+    IHubContext<AgentHubService> agentHub,
+    IHubContext<NetOpsHub> desktopHub,
+    IMemoryCache commandRoutes,
+    ILogger<CommandConsumer> logger) : IConsumer<RunCommandMessage>
+{
+    public async Task Consume(ConsumeContext<RunCommandMessage> context)
+    {
+        var msg = context.Message;
+        logger.LogInformation("Đã nhận lệnh {CommandId} cho Agent {AgentId}", msg.CommandId, msg.AgentId);
+
+        if (!connections.TryGetConnection(msg.AgentId, out var conn) || conn is null)
         {
-            _connectionManager = connectionManager;
-            _agentHubContext = agentHubContext;
-            _logger = logger;
+            logger.LogWarning("Agent {AgentId} đang offline, hủy lệnh {CommandId}.", msg.AgentId, msg.CommandId);
+            await NotifyOfflineAsync(msg, context.CancellationToken);
+            return;
         }
 
-        public async Task Consume(ConsumeContext<RunCommandMessage> context)
+        var request = new CommandRequest
         {
-            var message = context.Message;
-            _logger.LogInformation("Đã nhận lệnh {CommandId} từ Queue cho Agent {AgentId}", message.CommandId, message.AgentId);
+            CommandId = msg.CommandId,
+            CommandText = msg.CommandText,
+            TimeoutSeconds = msg.TimeoutSeconds
+        };
 
-            // 1. Tìm phiên SignalR đang hoạt động của Agent
-            if (!_connectionManager.TryGetConnection(message.AgentId, out var connection) || connection is null)
-            {
-                _logger.LogWarning("Agent {AgentId} hiện đang offline. Lệnh {CommandId} không thể gửi đi.", message.AgentId, message.CommandId);
-                return;
-            }
+        try
+        {
+            await agentHub.Clients.Client(conn.ConnectionId)
+                .SendAsync("ReceiveCommand", request, context.CancellationToken);
 
-            // 2. Đóng gói lệnh thành CommandRequest gửi qua SignalR
-            var commandRequest = new CommandRequest
-            {
-                CommandId = message.CommandId,
-                CommandText = message.CommandText,
-                TimeoutSeconds = message.TimeoutSeconds
-            };
+            logger.LogInformation("Đã đẩy lệnh {CommandId} xuống Agent {AgentId} (phiên {ConnectionId})",
+                msg.CommandId, msg.AgentId, conn.ConnectionId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Lỗi SignalR khi đẩy lệnh {CommandId} xuống Agent {AgentId}", msg.CommandId, msg.AgentId);
+            throw; // Để MassTransit retry hoặc đưa vào error queue
+        }
+    }
 
-            // 3. Đẩy lệnh xuống đúng kết nối SignalR hiện hành của Agent
-            try
+    private async Task NotifyOfflineAsync(RunCommandMessage msg, CancellationToken ct)
+    {
+        var cacheKey = $"command:{msg.CommandId}";
+        if (!commandRoutes.TryGetValue<string>(cacheKey, out var desktopId) || string.IsNullOrWhiteSpace(desktopId))
+            return;
+
+        commandRoutes.Remove(cacheKey);
+
+        try
+        {
+            await desktopHub.Clients.Client(desktopId).SendAsync("CommandOutputReceived", new CommandOutput
             {
-                await _agentHubContext.Clients
-                    .Client(connection.ConnectionId)
-                    .SendAsync("ReceiveCommand", commandRequest, context.CancellationToken);
-                _logger.LogInformation("Đã đẩy thành công lệnh {CommandId} xuống Agent {AgentId} (phien {ConnectionId})",
-                    message.CommandId, message.AgentId, connection.ConnectionId);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogError(ex, "Lỗi SignalR khi đẩy lệnh {CommandId} xuống Agent {AgentId}", message.CommandId, message.AgentId);
-                throw; // Throw để MassTransit tự động đẩy lại (retry) hoặc đưa vào Dead Letter Queue
-            }
+                AgentId = msg.AgentId,
+                CommandId = msg.CommandId,
+                OutputLine = $"[ERROR] Agent {msg.AgentId} đang offline, không thể thực thi lệnh.",
+                IsError = true,
+                IsCompleted = true,
+                ExitCode = -1
+            }, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Không gửi được thông báo offline cho lệnh {CommandId}.", msg.CommandId);
         }
     }
 }

@@ -65,11 +65,11 @@ public class NetOpsHub : Hub
         if (!_connections.TryGetConnection(agentId, out var connection) || connection is null)
             throw new HubException("Không tìm thấy kết nối của Agent.");
 
-        // Lưu route bằng chính ConnectionId hiện tại trước khi đẩy vào queue
-        // để output trả về nhanh vẫn định tuyến đúng về Desktop này.
+        // Lưu route bằng chính ConnectionId hiện tại kèm TTL (Timeout + 60s dự phòng)
+        // để output trả về nhanh vẫn định tuyến đúng về Desktop và tránh rò rỉ bộ nhớ nếu Agent mất kết nối.
         var commandId = Guid.NewGuid().ToString("N");
         var cacheKey = $"command:{commandId}";
-        _cache.Set(cacheKey, Context.ConnectionId);
+        _cache.Set(cacheKey, Context.ConnectionId, TimeSpan.FromSeconds(request.TimeoutSeconds + 60));
 
         var message = new RunCommandMessage
         {
