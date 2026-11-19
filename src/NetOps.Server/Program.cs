@@ -1,3 +1,5 @@
+// Dùng thư viện này thêm regex để kiểm tra hợp lệ ngay trước endpoint (chống PromQL Injection)
+using System.Text.RegularExpressions;
 // [5.2] Khai báo chính sách RunCommands
 // Namespace này chứa các hàm của thư viện vừa cài ở [5.1], gồm AddKeycloakAuthorization() và RequireRealmRoles().
 using Keycloak.AuthServices.Authorization;
@@ -126,11 +128,17 @@ app.UseAuthorization();
 app.MapHub<AgentHubService>("/hubs/agents");
 
 // -- API của Prometheus --
+// Chỉ cho phép agentId gồm chữ, số, '.', '_', '-' (tối đa 128 ký tự) để chống PromQL Injection
+var validAgentIdRegex = new Regex(@"^[a-zA-Z0-9._-]{1,128}$", RegexOptions.Compiled);
+
 // Endpoint tra cứu nhanh chỉ số mới nhất của 1 máy
 app.MapGet("/api/hosts/{agentId}/metrics/summary", async (
     string agentId,
     IHttpClientFactory clientFactory) =>
 {
+    if (string.IsNullOrWhiteSpace(agentId) || !validAgentIdRegex.IsMatch(agentId))
+        return Results.BadRequest("AgentId không hợp lệ.");
+
     var client = clientFactory.CreateClient("Prometheus");
 
     async Task<double> QueryPrometheusMetricAsync(string metricName)
@@ -189,6 +197,9 @@ app.MapGet("/api/hosts/{agentId}/metrics/history", async (
     string? range,
     IHttpClientFactory clientFactory) =>
 {
+    if (string.IsNullOrWhiteSpace(agentId) || !validAgentIdRegex.IsMatch(agentId))
+        return Results.BadRequest("AgentId không hợp lệ.");
+
     var client = clientFactory.CreateClient("Prometheus");
 
     // 1. Bảng quy đổi dải thời gian sang số giây và bước nhảy (step)
